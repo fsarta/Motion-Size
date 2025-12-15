@@ -276,34 +276,120 @@ const PowerGroupForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) 
   );
 };
 
+type FieldConfig = {
+  key: string;
+  label: string;
+  unitType: 'mass' | 'length' | 'force' | 'inertia' | 'angle' | 'factor' | 'torque' | 'density' | 'ratio';
+};
+
+const MECHANISM_CONFIG: Record<string, FieldConfig[]> = {
+  'Conveyor': [
+    { key: 'massLoad', label: 'Mass of Load', unitType: 'mass' },
+    { key: 'massBelt', label: 'Mass of Belt', unitType: 'mass' },
+    { key: 'pulleyRadius', label: 'Drive Pulley Radius', unitType: 'length' },
+    { key: 'frictionCoeff', label: 'Friction Coeff', unitType: 'factor' },
+    { key: 'inclineAngle', label: 'Incline Angle', unitType: 'angle' },
+    { key: 'additionalForce', label: 'Thrust / Friction', unitType: 'force' },
+  ],
+  'Ball Screw': [
+    { key: 'massLoad', label: 'Mass of Load', unitType: 'mass' },
+    { key: 'massTable', label: 'Mass of Table', unitType: 'mass' },
+    { key: 'screwLead', label: 'Screw Lead', unitType: 'length' },
+    { key: 'screwDiameter', label: 'Screw Diameter', unitType: 'length' },
+    { key: 'screwLength', label: 'Screw Length', unitType: 'length' },
+    { key: 'frictionCoeff', label: 'Friction Coeff', unitType: 'factor' },
+    { key: 'inclineAngle', label: 'Incline Angle', unitType: 'angle' },
+    { key: 'additionalForce', label: 'Process Force', unitType: 'force' },
+  ],
+  'Rack & Pinion': [
+    { key: 'massLoad', label: 'Mass of Load', unitType: 'mass' },
+    { key: 'massCarriage', label: 'Mass of Carriage', unitType: 'mass' },
+    { key: 'pinionRadius', label: 'Pinion Radius', unitType: 'length' },
+    { key: 'frictionCoeff', label: 'Friction Coeff', unitType: 'factor' },
+    { key: 'inclineAngle', label: 'Incline Angle', unitType: 'angle' },
+    { key: 'additionalForce', label: 'Process Force', unitType: 'force' },
+  ],
+  'Rotary Table': [
+    { key: 'loadInertia', label: 'Load Inertia', unitType: 'inertia' },
+    { key: 'tableInertia', label: 'Table Inertia', unitType: 'inertia' },
+    { key: 'frictionTorque', label: 'Friction Torque', unitType: 'torque' },
+    { key: 'disturbTorque', label: 'Disturbance Torque', unitType: 'torque' },
+  ],
+  'Chain Drive': [
+    { key: 'massLoad', label: 'Mass of Load', unitType: 'mass' },
+    { key: 'massChain', label: 'Mass of Chain', unitType: 'mass' },
+    { key: 'sprocketRadius', label: 'Sprocket Radius', unitType: 'length' },
+    { key: 'frictionCoeff', label: 'Friction Coeff', unitType: 'factor' },
+    { key: 'inclineAngle', label: 'Incline Angle', unitType: 'angle' },
+    { key: 'additionalForce', label: 'Thrust Force', unitType: 'force' },
+  ],
+  'Linear Motor': [
+     { key: 'movingMass', label: 'Moving Mass', unitType: 'mass' },
+     { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+     { key: 'processForce', label: 'Process Force', unitType: 'force' },
+     { key: 'inclineAngle', label: 'Incline Angle', unitType: 'angle' },
+  ],
+  'Roller Feed': [
+    { key: 'rollInertia', label: 'Roll Inertia (Total)', unitType: 'inertia' },
+    { key: 'rollRadius', label: 'Roll Radius', unitType: 'length' },
+    { key: 'materialMass', label: 'Material Mass', unitType: 'mass' },
+    { key: 'frictionTorque', label: 'Friction Torque', unitType: 'torque' },
+    { key: 'tensionForce', label: 'Web Tension', unitType: 'force' },
+  ],
+  'Winder': [
+    { key: 'minDiameter', label: 'Min Diameter', unitType: 'length' },
+    { key: 'maxDiameter', label: 'Max Diameter', unitType: 'length' },
+    { key: 'webWidth', label: 'Web Width', unitType: 'length' },
+    { key: 'density', label: 'Material Density', unitType: 'density' },
+    { key: 'frictionTorque', label: 'Friction Torque', unitType: 'torque' },
+    { key: 'webTension', label: 'Web Tension', unitType: 'force' },
+  ],
+  'Slider Crank': [
+    { key: 'sliderMass', label: 'Slider Mass', unitType: 'mass' },
+    { key: 'crankRadius', label: 'Crank Radius', unitType: 'length' },
+    { key: 'rodLength', label: 'Connecting Rod Length', unitType: 'length' },
+    { key: 'frictionCoeff', label: 'Friction Coeff', unitType: 'factor' },
+    { key: 'processForce', label: 'Slider Force', unitType: 'force' },
+  ],
+  'User Defined': [
+    { key: 'totalInertia', label: 'Total Inertia', unitType: 'inertia' },
+    { key: 'totalMass', label: 'Total Mass', unitType: 'mass' },
+    { key: 'externalTorque', label: 'External Torque', unitType: 'torque' },
+    { key: 'externalForce', label: 'External Force', unitType: 'force' },
+  ]
+};
+
 const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
   const [system, setSystem] = useState<SystemType>(System.METRIC);
+  const mechType = params.mechanismType || 'Conveyor';
+  const fields = MECHANISM_CONFIG[mechType] || [];
 
   const handleChange = (key: string, value: any) => {
     onUpdate({ [key]: value });
   };
   
   // Wrapper to handle input unit conversion
-  const handleUnitChange = (key: string, value: string, type: 'mass' | 'length' | 'force' | 'inertia') => {
+  const handleUnitChange = (key: string, value: string, type: any) => {
     // Convert the display value (in current system) back to metric for storage
     const metricValue = toMetric(value, type, system);
     onUpdate({ [key]: metricValue });
   };
 
-  const mechType = params.mechanismType || 'Conveyor';
+  const renderField = (field: FieldConfig) => {
+    return (
+      <InputGroup key={field.key} label={field.label} unit={getUnit(field.unitType, system)}>
+        <NumberInput 
+          value={convert(params[field.key], field.unitType, system)} 
+          onChange={(e) => handleUnitChange(field.key, e.target.value, field.unitType)} 
+        />
+      </InputGroup>
+    );
+  };
 
-  // Determine field visibility/enabling based on mechanism type
-  const isConveyor = mechType === 'Conveyor';
-  const isRackPinion = mechType === 'Rack & Pinion';
-  const isBallScrew = mechType === 'Ball Screw';
-  const isRotary = mechType === 'Rotary Table';
-  const isLinear = mechType === 'Linear Actuator';
-
-  // Dynamic Labels
-  const radiusLabel = isRackPinion ? "Pinion Radius" : "Drive Pulley Radius";
-  const massLoadLabel = isRotary ? "Load Inertia" : "Mass of Load";
-  const massLoadUnit = isRotary ? getUnit('inertia', system) : getUnit('mass', system);
-  const massLoadType = isRotary ? 'inertia' : 'mass';
+  // Split fields into two columns
+  const half = Math.ceil(fields.length / 2);
+  const leftFields = fields.slice(0, half);
+  const rightFields = fields.slice(half);
 
   return (
     <div className="relative">
@@ -316,77 +402,16 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
           <InputGroup label="Mechanism Type">
             <Select 
               value={mechType} 
-              options={['Conveyor', 'Rack & Pinion', 'Ball Screw', 'Rotary Table', 'Linear Actuator']} 
+              options={Object.keys(MECHANISM_CONFIG)} 
               onChange={(e) => handleChange('mechanismType', e.target.value)} 
             />
           </InputGroup>
-          
-          <InputGroup label={massLoadLabel} unit={massLoadUnit}>
-            <NumberInput 
-              value={convert(params.massLoad, massLoadType, system)} 
-              onChange={(e) => handleUnitChange('massLoad', e.target.value, massLoadType)} 
-            />
-          </InputGroup>
-
-          <InputGroup label="Mass of Belt" unit={getUnit('mass', system)}>
-            <NumberInput 
-              value={convert(params.massBelt, 'mass', system)} 
-              onChange={(e) => handleUnitChange('massBelt', e.target.value, 'mass')}
-              readOnly={!isConveyor} 
-            />
-          </InputGroup>
-
-          <InputGroup label="Friction Coeff" unit="µ">
-            <NumberInput value={params.frictionCoeff} onChange={(e) => handleChange('frictionCoeff', e.target.value)} />
-          </InputGroup>
-
-          <InputGroup label="Incline Angle" unit="°">
-            <NumberInput 
-              value={params.inclineAngle} 
-              onChange={(e) => handleChange('inclineAngle', e.target.value)} 
-              readOnly={isRotary}
-            />
-          </InputGroup>
+          {leftFields.map(renderField)}
         </div>
         <div>
-          <InputGroup label={radiusLabel} unit={getUnit('length', system)}>
-            <NumberInput 
-              value={convert(params.pulleyRadius, 'length', system)} 
-              onChange={(e) => handleUnitChange('pulleyRadius', e.target.value, 'length')} 
-              readOnly={!isConveyor && !isRackPinion}
-            />
-          </InputGroup>
-
-           <InputGroup label="Screw Lead" unit={getUnit('length', system)}>
-            <NumberInput 
-              value={convert(params.screwLead, 'length', system)} 
-              onChange={(e) => handleUnitChange('screwLead', e.target.value, 'length')} 
-              readOnly={!isBallScrew}
-            />
-          </InputGroup>
-
-          <InputGroup label="Screw Diameter" unit={getUnit('length', system)}>
-            <NumberInput 
-              value={convert(params.screwDiameter, 'length', system)} 
-              onChange={(e) => handleUnitChange('screwDiameter', e.target.value, 'length')} 
-              readOnly={!isBallScrew}
-            />
-          </InputGroup>
-          
-           <InputGroup label="Screw Length" unit={getUnit('length', system)}>
-            <NumberInput 
-              value={convert(params.screwLength, 'length', system)} 
-              onChange={(e) => handleUnitChange('screwLength', e.target.value, 'length')} 
-              readOnly={!isBallScrew}
-            />
-          </InputGroup>
-
-          <InputGroup label="Additional Force" unit={getUnit('force', system)}>
-            <NumberInput 
-              value={convert(params.additionalForce, 'force', system)} 
-              onChange={(e) => handleUnitChange('additionalForce', e.target.value, 'force')} 
-            />
-          </InputGroup>
+          {/* Spacer to align with Mechanism Type dropdown on the left */}
+          <div className="h-[26px] mb-1.5"></div> 
+          {rightFields.map(renderField)}
         </div>
       </div>
       <div className="mt-4 p-2 border border-gray-300 bg-white">

@@ -1,5 +1,5 @@
 
-type UnitType = 'torque' | 'power' | 'inertia' | 'length' | 'mass' | 'force' | 'current' | 'voltage' | 'frequency' | 'speed' | 'ratio' | 'efficiency' | 'angle' | 'factor';
+type UnitType = 'torque' | 'power' | 'inertia' | 'length' | 'mass' | 'force' | 'current' | 'voltage' | 'frequency' | 'speed' | 'ratio' | 'efficiency' | 'angle' | 'factor' | 'density';
 
 interface ConversionDef {
   factor: number; // Multiplier to go from Metric to Imperial
@@ -22,8 +22,9 @@ const CONVERSIONS: Record<string, ConversionDef> = {
   speed: { factor: 1, metric: 'rpm', imperial: 'rpm', precision: 0 },
   ratio: { factor: 1, metric: '', imperial: '', precision: 2 },
   efficiency: { factor: 1, metric: '%', imperial: '%', precision: 1 },
-  angle: { factor: 1, metric: 'arcmin', imperial: 'arcmin', precision: 1 },
-  factor: { factor: 1, metric: 'cosφ', imperial: 'cosφ', precision: 2 },
+  angle: { factor: 1, metric: 'deg', imperial: 'deg', precision: 1 },
+  factor: { factor: 1, metric: 'µ', imperial: 'µ', precision: 2 },
+  density: { factor: 0.036127, metric: 'kg/m³', imperial: 'lb/in³', precision: 2 },
 };
 
 export const System = {
