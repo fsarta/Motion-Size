@@ -2,7 +2,13 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Zap, Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, List, Database, Gauge, Scale } from 'lucide-react';
 import { TreeNode } from '../types';
 import { motorCatalog, driveCatalog, gearboxCatalog } from '../catalogData';
-import { convert, toMetric, getUnit, System, SystemType } from '../utils/unitConversion';
+import { 
+  toDisplay, 
+  toBase, 
+  getDefaultUnit, 
+  getUnitsForType, 
+  UnitType 
+} from '../utils/unitConversion';
 
 /* --- Visualization Components --- */
 
@@ -153,32 +159,13 @@ const Visualizer = ({ axes }: { axes: TreeNode[] }) => {
 
 /* --- Form Components --- */
 
-const UnitToggle = ({ system, onChange }: { system: SystemType, onChange: (s: SystemType) => void }) => (
-  <div className="flex items-center space-x-1 mb-3 bg-gray-200 p-0.5 rounded-sm w-fit">
-    <button 
-      onClick={() => onChange(System.METRIC)}
-      className={`text-[10px] px-2 py-0.5 rounded-sm ${system === System.METRIC ? 'bg-white shadow-sm font-bold text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
-    >
-      Metric
-    </button>
-    <button 
-      onClick={() => onChange(System.IMPERIAL)}
-      className={`text-[10px] px-2 py-0.5 rounded-sm ${system === System.IMPERIAL ? 'bg-white shadow-sm font-bold text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
-    >
-      Imperial
-    </button>
-  </div>
-);
-
-const InputGroup = ({ label, children, unit, checkbox, className="" }: { label: string, children?: React.ReactNode, unit?: string, checkbox?: boolean, className?: string }) => (
+const InputGroup = ({ label, children, className="" }: { label: string, children?: React.ReactNode, className?: string }) => (
   <div className={`flex items-center mb-1.5 ${className}`}>
-    <div className="w-40 text-xs text-win-blue font-medium truncate pr-2 flex items-center text-right justify-end">
-        {checkbox && <input type="checkbox" className="mr-1.5 h-3 w-3" />}
+    <div className="w-40 text-xs text-win-blue font-medium truncate pr-2 flex items-center text-right justify-end shrink-0">
         {label}
     </div>
-    <div className="flex-1 flex items-center">
+    <div className="flex-1 flex items-center min-w-0">
       {children}
-      {unit && <span className="ml-1.5 text-xs text-gray-600 w-12">{unit}</span>}
     </div>
   </div>
 );
@@ -192,6 +179,61 @@ const Select = ({ value, options, onChange }: { value?: string | number, options
     {options.map(o => <option key={o} value={o}>{o}</option>)}
   </select>
 );
+
+// Advanced Input that handles Unit Selection and Auto-Conversion
+const UnitInput = ({ 
+  value, 
+  onChange, 
+  type, 
+  readOnly 
+}: { 
+  value: string | number | undefined, 
+  onChange: (val: string) => void, 
+  type: UnitType, 
+  readOnly?: boolean 
+}) => {
+  const [currentUnit, setCurrentUnit] = useState<string>(() => getDefaultUnit(type));
+  const availableUnits = getUnitsForType(type);
+
+  // Derived state for display
+  const displayValue = useMemo(() => {
+    return toDisplay(value, type, currentUnit);
+  }, [value, type, currentUnit]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Convert entered display value back to base unit for storage
+    const newVal = toBase(e.target.value, type, currentUnit);
+    onChange(newVal);
+  };
+
+  const handleUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newUnit = e.target.value;
+    setCurrentUnit(newUnit);
+    // Value in store doesn't change, only display value re-renders
+  };
+
+  return (
+    <div className="flex w-full items-center">
+      <input 
+        type="text" 
+        value={displayValue} 
+        onChange={handleInputChange}
+        readOnly={readOnly}
+        className={`flex-1 min-w-0 text-right text-xs border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} 
+      />
+      {availableUnits.length > 0 && (
+        <select 
+          value={currentUnit} 
+          onChange={handleUnitChange}
+          disabled={readOnly && availableUnits.length < 2}
+          className="ml-1 w-16 text-[10px] border border-gray-300 bg-gray-50 py-0.5 h-6 focus:outline-none text-gray-700"
+        >
+          {availableUnits.map(u => <option key={u} value={u}>{u}</option>)}
+        </select>
+      )}
+    </div>
+  );
+};
 
 const NumberInput = ({ value, onChange, className = "w-full", readOnly }: { value?: string | number, onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void, className?: string, readOnly?: boolean }) => (
   <input 
@@ -238,8 +280,8 @@ const PowerGroupForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) 
   return (
     <div className="grid grid-cols-2 gap-x-8 gap-y-1">
       <div>
-        <InputGroup label="Cycle time" unit="s">
-          <NumberInput value={params.cycleTime} onChange={(e) => handleChange('cycleTime', e.target.value)} />
+        <InputGroup label="Cycle time">
+          <UnitInput value={params.cycleTime} onChange={(v) => handleChange('cycleTime', v)} type="time" />
         </InputGroup>
         <InputGroup label="Configuration">
            <Select value={params.configuration} options={['Multi-Axis', 'Independent', 'Robotic']} onChange={(e) => handleChange('configuration', e.target.value)} />
@@ -247,17 +289,19 @@ const PowerGroupForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) 
         
         <div className="h-4 border-b border-gray-300 mb-2 mt-1"></div>
 
-        <InputGroup label="Supply" unit="Ø">
+        <InputGroup label="Supply">
            <div className="flex w-full space-x-1 items-center">
              <Select value={params.supplyVoltage} options={['230', '400', '480']} onChange={(e) => handleChange('supplyVoltage', e.target.value)} />
              <span className="text-xs text-red-700 mx-1">Vac</span>
              <Select value={params.supplyPhase} options={['1', '3']} onChange={(e) => handleChange('supplyPhase', e.target.value)} />
            </div>
         </InputGroup>
-        <InputGroup label="Nominal bus voltage" unit="Vdc">
+        <InputGroup label="Nominal bus voltage">
           <div className="flex w-full items-center">
-               <NumberInput value={params.nominalBusVoltage} className="flex-1" onChange={(e) => handleChange('nominalBusVoltage', e.target.value)} />
-               <div className="ml-2 flex items-center">
+               <div className="flex-1">
+                <UnitInput value={params.nominalBusVoltage} onChange={(v) => handleChange('nominalBusVoltage', v)} type="voltage" />
+               </div>
+               <div className="ml-2 flex items-center shrink-0">
                   <input type="checkbox" checked className="mr-1" readOnly />
                   <span className="text-xs">Auto</span>
                </div>
@@ -265,11 +309,11 @@ const PowerGroupForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) 
         </InputGroup>
       </div>
       <div>
-        <InputGroup label="Infeed Peak Power" unit="%">
-           <NumberInput value={params.infeedPeakPower} onChange={(e) => handleChange('infeedPeakPower', e.target.value)} />
+        <InputGroup label="Infeed Peak Power">
+           <UnitInput value={params.infeedPeakPower} onChange={(v) => handleChange('infeedPeakPower', v)} type="efficiency" />
         </InputGroup>
-        <InputGroup label="Target Bus Voltage" unit="Vdc">
-           <NumberInput value={params.targetBusVoltage} onChange={(e) => handleChange('targetBusVoltage', e.target.value)} />
+        <InputGroup label="Target Bus Voltage">
+           <UnitInput value={params.targetBusVoltage} onChange={(v) => handleChange('targetBusVoltage', v)} type="voltage" />
         </InputGroup>
       </div>
     </div>
@@ -279,7 +323,7 @@ const PowerGroupForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) 
 type FieldConfig = {
   key: string;
   label: string;
-  unitType: 'mass' | 'length' | 'force' | 'inertia' | 'angle' | 'factor' | 'torque' | 'density' | 'ratio';
+  unitType: UnitType;
 };
 
 const MECHANISM_CONFIG: Record<string, FieldConfig[]> = {
@@ -360,7 +404,6 @@ const MECHANISM_CONFIG: Record<string, FieldConfig[]> = {
 };
 
 const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
-  const [system, setSystem] = useState<SystemType>(System.METRIC);
   const mechType = params.mechanismType || 'Conveyor';
   const fields = MECHANISM_CONFIG[mechType] || [];
 
@@ -368,19 +411,13 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
     onUpdate({ [key]: value });
   };
   
-  // Wrapper to handle input unit conversion
-  const handleUnitChange = (key: string, value: string, type: any) => {
-    // Convert the display value (in current system) back to metric for storage
-    const metricValue = toMetric(value, type, system);
-    onUpdate({ [key]: metricValue });
-  };
-
   const renderField = (field: FieldConfig) => {
     return (
-      <InputGroup key={field.key} label={field.label} unit={getUnit(field.unitType, system)}>
-        <NumberInput 
-          value={convert(params[field.key], field.unitType, system)} 
-          onChange={(e) => handleUnitChange(field.key, e.target.value, field.unitType)} 
+      <InputGroup key={field.key} label={field.label}>
+        <UnitInput 
+          value={params[field.key]} 
+          onChange={(val) => handleChange(field.key, val)}
+          type={field.unitType}
         />
       </InputGroup>
     );
@@ -393,10 +430,6 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
 
   return (
     <div className="relative">
-      <div className="absolute top-0 right-0 -mt-10">
-         <UnitToggle system={system} onChange={setSystem} />
-      </div>
-
       <div className="grid grid-cols-2 gap-8">
         <div>
           <InputGroup label="Mechanism Type">
@@ -425,8 +458,6 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
 };
 
 const GearboxForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
-  const [system, setSystem] = useState<SystemType>(System.METRIC);
-  
   const uniqueVendors = Array.from(new Set(gearboxCatalog.map(g => g.vendor)));
   const availableModels = gearboxCatalog.filter(g => g.vendor === params.vendor);
 
@@ -465,10 +496,6 @@ const GearboxForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => 
 
   return (
     <div className="relative">
-      <div className="absolute top-0 right-0 -mt-10">
-         <UnitToggle system={system} onChange={setSystem} />
-      </div>
-
       <div className="grid grid-cols-2 gap-8">
         <div>
           <InputGroup label="Vendor">
@@ -478,21 +505,21 @@ const GearboxForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => 
              <Select value={params.model} options={availableModels.map(m => m.model)} onChange={handleModelChange} />
           </InputGroup>
           <InputGroup label="Ratio (i)">
-            <NumberInput value={params.ratio} readOnly />
+            <UnitInput value={params.ratio} onChange={()=>{}} type="ratio" readOnly />
           </InputGroup>
-          <InputGroup label="Efficiency" unit={getUnit('efficiency', system)}>
-            <NumberInput value={convert(params.efficiency, 'efficiency', system)} readOnly />
+          <InputGroup label="Efficiency">
+            <UnitInput value={params.efficiency} onChange={()=>{}} type="efficiency" readOnly />
           </InputGroup>
         </div>
         <div>
-          <InputGroup label="Inertia" unit={getUnit('inertia', system)}>
-            <NumberInput value={convert(params.inertia, 'inertia', system)} readOnly />
+          <InputGroup label="Inertia">
+            <UnitInput value={params.inertia} onChange={()=>{}} type="inertia" readOnly />
           </InputGroup>
-          <InputGroup label="Backlash" unit={getUnit('angle', system)}>
-            <NumberInput value={convert(params.backlash, 'angle', system)} readOnly />
+          <InputGroup label="Backlash">
+            <UnitInput value={params.backlash} onChange={()=>{}} type="angle" readOnly />
           </InputGroup>
-          <InputGroup label="Max Input Speed" unit={getUnit('speed', system)}>
-            <NumberInput value={convert(params.maxInputSpeed, 'speed', system)} readOnly />
+          <InputGroup label="Max Input Speed">
+            <UnitInput value={params.maxInputSpeed} onChange={()=>{}} type="speed" readOnly />
           </InputGroup>
         </div>
       </div>
@@ -501,8 +528,6 @@ const GearboxForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => 
 };
 
 const MotorDriveForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
-  const [system, setSystem] = useState<SystemType>(System.METRIC);
-
   const uniqueMotorVendors = Array.from(new Set(motorCatalog.map(m => m.vendor)));
   const uniqueDriveVendors = Array.from(new Set(driveCatalog.map(d => d.vendor)));
   
@@ -578,7 +603,6 @@ const MotorDriveForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) 
         <div>
           <SectionHeader 
             title="Motor Selection" 
-            rightContent={<UnitToggle system={system} onChange={setSystem} />}
           />
           <InputGroup label="Vendor">
             <Select value={params.motorVendor} options={uniqueMotorVendors} onChange={handleMotorVendorChange} />
@@ -586,26 +610,26 @@ const MotorDriveForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) 
           <InputGroup label="Model">
              <Select value={params.motorModel} options={availableMotors.map(m => m.model)} onChange={handleMotorModelChange} />
           </InputGroup>
-          <InputGroup label="Rated Speed" unit={getUnit('speed', system)}>
-            <NumberInput value={convert(params.ratedSpeed, 'speed', system)} readOnly />
+          <InputGroup label="Rated Speed">
+            <UnitInput value={params.ratedSpeed} onChange={()=>{}} type="speed" readOnly />
           </InputGroup>
-          <InputGroup label="Rated Torque" unit={getUnit('torque', system)}>
-            <NumberInput value={convert(params.ratedTorque, 'torque', system)} readOnly />
+          <InputGroup label="Rated Torque">
+            <UnitInput value={params.ratedTorque} onChange={()=>{}} type="torque" readOnly />
           </InputGroup>
-          <InputGroup label="Rated Power" unit={getUnit('power', system)}>
-            <NumberInput value={convert(params.ratedPower, 'power', system)} readOnly />
+          <InputGroup label="Rated Power">
+            <UnitInput value={params.ratedPower} onChange={()=>{}} type="power" readOnly />
           </InputGroup>
-          <InputGroup label="Rated Current" unit={getUnit('current', system)}>
-            <NumberInput value={convert(params.ratedCurrent, 'current', system)} readOnly />
+          <InputGroup label="Rated Current">
+            <UnitInput value={params.ratedCurrent} onChange={()=>{}} type="current" readOnly />
           </InputGroup>
-          <InputGroup label="Efficiency" unit={getUnit('efficiency', system)}>
-            <NumberInput value={convert(params.motorEfficiency, 'efficiency', system)} readOnly />
+          <InputGroup label="Efficiency">
+            <UnitInput value={params.motorEfficiency} onChange={()=>{}} type="efficiency" readOnly />
           </InputGroup>
-          <InputGroup label="Power Factor" unit={getUnit('factor', system)}>
-            <NumberInput value={convert(params.powerFactor, 'factor', system)} readOnly />
+          <InputGroup label="Power Factor">
+            <UnitInput value={params.powerFactor} onChange={()=>{}} type="factor" readOnly />
           </InputGroup>
-          <InputGroup label="Inertia" unit={getUnit('inertia', system)}>
-            <NumberInput value={convert(params.motorInertia, 'inertia', system)} readOnly />
+          <InputGroup label="Inertia">
+            <UnitInput value={params.motorInertia} onChange={()=>{}} type="inertia" readOnly />
           </InputGroup>
         </div>
         <div>
@@ -616,15 +640,14 @@ const MotorDriveForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) 
           <InputGroup label="Model">
              <Select value={params.driveModel} options={availableDrives.map(d => d.model)} onChange={handleDriveModelChange} />
           </InputGroup>
-          <InputGroup label="Supply Voltage" unit={getUnit('voltage', system)}>
-            <NumberInput value={convert(params.driveSupplyVoltage, 'voltage', system)} readOnly />
+          <InputGroup label="Supply Voltage">
+            <UnitInput value={params.driveSupplyVoltage} onChange={()=>{}} type="voltage" readOnly />
           </InputGroup>
-          <InputGroup label="PWM Frequency" unit={getUnit('frequency', system)}>
-             {/* Often configurable even within a model constraint, so we might leave as Select or ReadOnly */}
-            <NumberInput value={params.pwmFrequency} readOnly />
+          <InputGroup label="PWM Frequency">
+             <UnitInput value={params.pwmFrequency} onChange={()=>{}} type="frequency" readOnly />
           </InputGroup>
-          <InputGroup label="Max Current" unit={getUnit('current', system)}>
-            <NumberInput value={convert(params.driveMaxCurrent, 'current', system)} readOnly />
+          <InputGroup label="Max Current">
+            <UnitInput value={params.driveMaxCurrent} onChange={()=>{}} type="current" readOnly />
           </InputGroup>
         </div>
       </div>
