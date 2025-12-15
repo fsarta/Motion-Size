@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Zap, Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, List, Database, Gauge } from 'lucide-react';
 import { TreeNode } from '../types';
+import { motorCatalog, driveCatalog, gearboxCatalog } from '../catalogData';
 
 /* --- Visualization Components --- */
 
@@ -69,7 +70,9 @@ const Visualizer = ({ axes }: { axes: TreeNode[] }) => {
          {/* Drives */}
          <div className="flex items-end overflow-x-auto pb-2 px-4 scrollbar-thin">
             {axes.map((axis, index) => {
-               const efficiency = 60 + (axis.label.length * 5 + index * 3) % 35;
+               // Try to get actual efficiency from the drive motor node params if traversing was easy, 
+               // for now we stick to the visualization effect.
+               const efficiency = 85 + (index * 2) % 10;
                return (
                 <div key={axis.id} className="flex flex-col items-center -mt-16 shrink-0">
                   <EfficiencyBar value={efficiency} />
@@ -98,15 +101,24 @@ const InputGroup = ({ label, children, unit, checkbox, className="" }: { label: 
   </div>
 );
 
-const Select = ({ value, options }: { value: string, options: string[] }) => (
-  <select className="w-full text-xs border border-gray-300 bg-white px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6">
-    <option>{value}</option>
+const Select = ({ value, options, onChange }: { value?: string | number, options: string[], onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void }) => (
+  <select 
+    value={value} 
+    onChange={onChange}
+    className="w-full text-xs border border-gray-300 bg-white px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6"
+  >
     {options.map(o => <option key={o} value={o}>{o}</option>)}
   </select>
 );
 
-const NumberInput = ({ value, className = "w-full" }: { value: string, className?: string }) => (
-  <input type="text" defaultValue={value} className={`${className} text-right text-xs border border-gray-300 bg-white px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6`} />
+const NumberInput = ({ value, onChange, className = "w-full", readOnly }: { value?: string | number, onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void, className?: string, readOnly?: boolean }) => (
+  <input 
+    type="text" 
+    value={value} 
+    onChange={onChange}
+    readOnly={readOnly}
+    className={`${className} text-right text-xs border border-gray-300 bg-white px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500' : ''}`} 
+  />
 );
 
 const SectionHeader = ({ title }: { title: string }) => (
@@ -133,215 +145,341 @@ const FormTabs = ({ tabs, activeTab, onTabClick }: { tabs: string[], activeTab: 
 
 /* --- Specific Node Forms --- */
 
-const PowerGroupForm = () => (
-  <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-    <div>
-      <InputGroup label="Cycle time" unit="s">
-        <NumberInput value="10" />
-      </InputGroup>
-      <InputGroup label="Configuration">
-         <Select value="Multi-Axis" options={['Multi-Axis', 'Independent', 'Robotic']} />
-      </InputGroup>
-      
-      <div className="h-4 border-b border-gray-300 mb-2 mt-1"></div>
+const PowerGroupForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
+  const handleChange = (key: string, value: any) => {
+    onUpdate({ [key]: value });
+  };
 
-      <InputGroup label="Supply" unit="Ø">
-         <div className="flex w-full space-x-1 items-center">
-           <Select value="400" options={['230', '480']} />
-           <span className="text-xs text-red-700 mx-1">Vac</span>
-           <Select value="3" options={['1']} />
-         </div>
-      </InputGroup>
-      <InputGroup label="Nominal bus voltage" unit="Vdc">
-        <div className="flex w-full items-center">
-             <NumberInput value="540" className="flex-1" />
-             <div className="ml-2 flex items-center">
-                <input type="checkbox" checked className="mr-1" />
-                <span className="text-xs">Auto</span>
-             </div>
-        </div>
-      </InputGroup>
-    </div>
-    <div>
-      <InputGroup label="Infeed Peak Power" unit="%">
-         <NumberInput value="0" />
-      </InputGroup>
-      <InputGroup label="Target Bus Voltage" unit="Vdc">
-         <NumberInput value="0" />
-      </InputGroup>
-    </div>
-  </div>
-);
-
-const MechanismForm = () => (
-  <div>
-    <div className="grid grid-cols-2 gap-8">
+  return (
+    <div className="grid grid-cols-2 gap-x-8 gap-y-1">
       <div>
-        <InputGroup label="Mechanism Type">
-          <Select value="Conveyor" options={['Rack & Pinion', 'Ball Screw', 'Rotary Table']} />
+        <InputGroup label="Cycle time" unit="s">
+          <NumberInput value={params.cycleTime} onChange={(e) => handleChange('cycleTime', e.target.value)} />
         </InputGroup>
-        <InputGroup label="Mass of Load" unit="kg">
-          <NumberInput value="50.0" />
+        <InputGroup label="Configuration">
+           <Select value={params.configuration} options={['Multi-Axis', 'Independent', 'Robotic']} onChange={(e) => handleChange('configuration', e.target.value)} />
         </InputGroup>
-        <InputGroup label="Mass of Belt" unit="kg">
-          <NumberInput value="5.2" />
-        </InputGroup>
-        <InputGroup label="Friction Coeff" unit="µ">
-          <NumberInput value="0.15" />
-        </InputGroup>
-      </div>
-      <div>
-        <InputGroup label="Incline Angle" unit="°">
-          <NumberInput value="0" />
-        </InputGroup>
-        <InputGroup label="Drive Pulley Radius" unit="mm">
-          <NumberInput value="45.0" />
-        </InputGroup>
-        <InputGroup label="Additional Force" unit="N">
-          <NumberInput value="0" />
-        </InputGroup>
-      </div>
-    </div>
-    <div className="mt-4 p-2 border border-gray-300 bg-white">
-        <div className="text-xs font-bold text-gray-500 mb-2">Thrust / Velocity Profile</div>
-        <div className="h-32 bg-gray-50 flex items-center justify-center border border-gray-200 border-dashed text-gray-400 text-xs">
-           Chart Preview Area
-        </div>
-    </div>
-  </div>
-);
+        
+        <div className="h-4 border-b border-gray-300 mb-2 mt-1"></div>
 
-const GearboxForm = () => (
-  <div className="grid grid-cols-2 gap-8">
-    <div>
-      <InputGroup label="Vendor">
-        <Select value="Generic" options={['Stober', 'Wittenstein', 'Neugart']} />
-      </InputGroup>
-      <InputGroup label="Ratio (i)">
-        <NumberInput value="10.0" />
-      </InputGroup>
-      <InputGroup label="Efficiency" unit="%">
-        <NumberInput value="95" />
-      </InputGroup>
-    </div>
-    <div>
-      <InputGroup label="Inertia" unit="kg·cm²">
-        <NumberInput value="0.5" />
-      </InputGroup>
-      <InputGroup label="Backlash" unit="arcmin">
-        <NumberInput value="4" />
-      </InputGroup>
-      <InputGroup label="Max Input Speed" unit="rpm">
-        <NumberInput value="6000" />
-      </InputGroup>
-    </div>
-  </div>
-);
-
-const MotorDriveForm = () => (
-  <div>
-    <div className="grid grid-cols-2 gap-8 mb-4">
-      <div>
-        <SectionHeader title="Motor Selection" />
-        <InputGroup label="Vendor">
-          <Select value="Siemens" options={['Bosch Rexroth', 'Beckhoff', 'Yaskawa']} />
-        </InputGroup>
-        <InputGroup label="Model">
-           <div className="flex w-full gap-1">
-             <input className="w-full text-xs border border-gray-300 px-1" value="1FK7060-2AC71" readOnly />
-             <button className="px-2 bg-gray-200 border border-gray-300 text-xs hover:bg-gray-300">...</button>
+        <InputGroup label="Supply" unit="Ø">
+           <div className="flex w-full space-x-1 items-center">
+             <Select value={params.supplyVoltage} options={['230', '400', '480']} onChange={(e) => handleChange('supplyVoltage', e.target.value)} />
+             <span className="text-xs text-red-700 mx-1">Vac</span>
+             <Select value={params.supplyPhase} options={['1', '3']} onChange={(e) => handleChange('supplyPhase', e.target.value)} />
            </div>
         </InputGroup>
-        <InputGroup label="Rated Speed" unit="rpm">
-          <NumberInput value="3000" />
+        <InputGroup label="Nominal bus voltage" unit="Vdc">
+          <div className="flex w-full items-center">
+               <NumberInput value={params.nominalBusVoltage} className="flex-1" onChange={(e) => handleChange('nominalBusVoltage', e.target.value)} />
+               <div className="ml-2 flex items-center">
+                  <input type="checkbox" checked className="mr-1" readOnly />
+                  <span className="text-xs">Auto</span>
+               </div>
+          </div>
         </InputGroup>
-        <InputGroup label="Rated Torque" unit="Nm">
-          <NumberInput value="6.0" />
+      </div>
+      <div>
+        <InputGroup label="Infeed Peak Power" unit="%">
+           <NumberInput value={params.infeedPeakPower} onChange={(e) => handleChange('infeedPeakPower', e.target.value)} />
         </InputGroup>
-        <InputGroup label="Rated Power" unit="kW">
-          <NumberInput value="1.88" />
+        <InputGroup label="Target Bus Voltage" unit="Vdc">
+           <NumberInput value={params.targetBusVoltage} onChange={(e) => handleChange('targetBusVoltage', e.target.value)} />
         </InputGroup>
-        <InputGroup label="Rated Current" unit="Arms">
-          <NumberInput value="4.2" />
+      </div>
+    </div>
+  );
+};
+
+const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
+  const handleChange = (key: string, value: any) => {
+    onUpdate({ [key]: value });
+  };
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-8">
+        <div>
+          <InputGroup label="Mechanism Type">
+            <Select value={params.mechanismType} options={['Conveyor', 'Rack & Pinion', 'Ball Screw', 'Rotary Table']} onChange={(e) => handleChange('mechanismType', e.target.value)} />
+          </InputGroup>
+          <InputGroup label="Mass of Load" unit="kg">
+            <NumberInput value={params.massLoad} onChange={(e) => handleChange('massLoad', e.target.value)} />
+          </InputGroup>
+          <InputGroup label="Mass of Belt" unit="kg">
+            <NumberInput value={params.massBelt} onChange={(e) => handleChange('massBelt', e.target.value)} />
+          </InputGroup>
+          <InputGroup label="Friction Coeff" unit="µ">
+            <NumberInput value={params.frictionCoeff} onChange={(e) => handleChange('frictionCoeff', e.target.value)} />
+          </InputGroup>
+        </div>
+        <div>
+          <InputGroup label="Incline Angle" unit="°">
+            <NumberInput value={params.inclineAngle} onChange={(e) => handleChange('inclineAngle', e.target.value)} />
+          </InputGroup>
+          <InputGroup label="Drive Pulley Radius" unit="mm">
+            <NumberInput value={params.pulleyRadius} onChange={(e) => handleChange('pulleyRadius', e.target.value)} />
+          </InputGroup>
+          <InputGroup label="Additional Force" unit="N">
+            <NumberInput value={params.additionalForce} onChange={(e) => handleChange('additionalForce', e.target.value)} />
+          </InputGroup>
+        </div>
+      </div>
+      <div className="mt-4 p-2 border border-gray-300 bg-white">
+          <div className="text-xs font-bold text-gray-500 mb-2">Thrust / Velocity Profile</div>
+          <div className="h-32 bg-gray-50 flex items-center justify-center border border-gray-200 border-dashed text-gray-400 text-xs">
+             Chart Preview Area
+          </div>
+      </div>
+    </div>
+  );
+};
+
+const GearboxForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
+  const uniqueVendors = Array.from(new Set(gearboxCatalog.map(g => g.vendor)));
+  const availableModels = gearboxCatalog.filter(g => g.vendor === params.vendor);
+
+  const handleVendorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newVendor = e.target.value;
+    const firstModel = gearboxCatalog.find(g => g.vendor === newVendor);
+    if (firstModel) {
+      onUpdate({
+        vendor: newVendor,
+        model: firstModel.model,
+        ratio: firstModel.ratio,
+        efficiency: firstModel.efficiency,
+        inertia: firstModel.inertia,
+        backlash: firstModel.backlash,
+        maxInputSpeed: firstModel.maxInputSpeed
+      });
+    } else {
+      onUpdate({ vendor: newVendor, model: '' });
+    }
+  };
+
+  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newModel = e.target.value;
+    const specs = gearboxCatalog.find(g => g.model === newModel);
+    if (specs) {
+      onUpdate({
+        model: newModel,
+        ratio: specs.ratio,
+        efficiency: specs.efficiency,
+        inertia: specs.inertia,
+        backlash: specs.backlash,
+        maxInputSpeed: specs.maxInputSpeed
+      });
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-2 gap-8">
+      <div>
+        <InputGroup label="Vendor">
+          <Select value={params.vendor} options={uniqueVendors} onChange={handleVendorChange} />
+        </InputGroup>
+        <InputGroup label="Model">
+           <Select value={params.model} options={availableModels.map(m => m.model)} onChange={handleModelChange} />
+        </InputGroup>
+        <InputGroup label="Ratio (i)">
+          <NumberInput value={params.ratio} readOnly />
         </InputGroup>
         <InputGroup label="Efficiency" unit="%">
-          <NumberInput value="93.0" />
+          <NumberInput value={params.efficiency} readOnly />
         </InputGroup>
-        <InputGroup label="Power Factor" unit="cosφ">
-          <NumberInput value="0.92" />
-        </InputGroup>
+      </div>
+      <div>
         <InputGroup label="Inertia" unit="kg·cm²">
-          <NumberInput value="3.4" />
+          <NumberInput value={params.inertia} readOnly />
         </InputGroup>
-      </div>
-      <div>
-        <SectionHeader title="Drive / Inverter" />
-        <InputGroup label="Model">
-           <div className="flex w-full gap-1">
-             <input className="w-full text-xs border border-gray-300 px-1" value="S120-3A-400V" readOnly />
-             <button className="px-2 bg-gray-200 border border-gray-300 text-xs hover:bg-gray-300">...</button>
-           </div>
+        <InputGroup label="Backlash" unit="arcmin">
+          <NumberInput value={params.backlash} readOnly />
         </InputGroup>
-        <InputGroup label="Supply Voltage" unit="V">
-          <NumberInput value="400" />
-        </InputGroup>
-        <InputGroup label="PWM Frequency" unit="kHz">
-          <Select value="8" options={['4', '8', '16']} />
-        </InputGroup>
-        <InputGroup label="Max Current" unit="A">
-          <NumberInput value="18.0" />
+        <InputGroup label="Max Input Speed" unit="rpm">
+          <NumberInput value={params.maxInputSpeed} readOnly />
         </InputGroup>
       </div>
     </div>
-    
-    <SectionHeader title="Performance Curves" />
-    <div className="grid grid-cols-2 gap-4">
-       <div className="border border-gray-300 bg-white h-48 relative p-2">
-          <div className="text-[10px] text-gray-500 absolute top-1 left-1">Torque vs Speed</div>
-          <div className="w-full h-full flex items-end">
-             {/* Fake Curve */}
-             <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-               <path d="M0,10 L40,10 L80,50 L100,90" fill="none" stroke="red" strokeWidth="2" />
-               <path d="M0,90 L100,90" stroke="black" strokeWidth="1" />
-               <path d="M0,0 L0,100" stroke="black" strokeWidth="1" />
-             </svg>
-          </div>
-       </div>
-       <div className="border border-gray-300 bg-white h-48 relative p-2">
-          <div className="text-[10px] text-gray-500 absolute top-1 left-1">Current vs Speed</div>
-          <div className="w-full h-full flex items-end">
-             <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                <path d="M0,90 L60,80 L100,20" fill="none" stroke="blue" strokeWidth="2" />
-                <path d="M0,90 L100,90" stroke="black" strokeWidth="1" />
-                <path d="M0,0 L0,100" stroke="black" strokeWidth="1" />
-             </svg>
-          </div>
-       </div>
-    </div>
-  </div>
-);
+  );
+};
 
-const AxisForm = () => (
-  <div>
-    <div className="p-4 bg-yellow-50 border border-yellow-200 mb-4 rounded-sm text-xs text-yellow-800">
-      Select a specific component (Mechanism, Gearbox, Motor) from the tree to edit its parameters.
-    </div>
-    <div className="grid grid-cols-2 gap-8">
-      <div>
-        <InputGroup label="Axis Name">
-          <input type="text" className="w-full text-xs border border-gray-300 px-1 h-6" defaultValue="Axis 1" />
-        </InputGroup>
-        <InputGroup label="Profile Type">
-           <Select value="Master/Follower" options={['Time Based', 'Master/Follower', 'Camming']} />
-        </InputGroup>
+const MotorDriveForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
+  const uniqueMotorVendors = Array.from(new Set(motorCatalog.map(m => m.vendor)));
+  const uniqueDriveVendors = Array.from(new Set(driveCatalog.map(d => d.vendor)));
+  
+  const availableMotors = motorCatalog.filter(m => m.vendor === params.motorVendor);
+  const availableDrives = driveCatalog.filter(d => d.vendor === (params.driveVendor || params.motorVendor)); // Default to motor vendor if drive vendor not set
+
+  const handleMotorVendorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newVendor = e.target.value;
+    const firstModel = motorCatalog.find(m => m.vendor === newVendor);
+    const updates: any = { motorVendor: newVendor };
+    
+    // Auto-select first model
+    if (firstModel) {
+      updates.motorModel = firstModel.model;
+      updates.ratedSpeed = firstModel.ratedSpeed;
+      updates.ratedTorque = firstModel.ratedTorque;
+      updates.ratedPower = firstModel.ratedPower;
+      updates.ratedCurrent = firstModel.ratedCurrent;
+      updates.motorEfficiency = firstModel.efficiency;
+      updates.powerFactor = firstModel.powerFactor;
+      updates.motorInertia = firstModel.inertia;
+    }
+    
+    onUpdate(updates);
+  };
+
+  const handleMotorModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const modelName = e.target.value;
+    const specs = motorCatalog.find(m => m.model === modelName);
+    if (specs) {
+      onUpdate({
+        motorModel: modelName,
+        ratedSpeed: specs.ratedSpeed,
+        ratedTorque: specs.ratedTorque,
+        ratedPower: specs.ratedPower,
+        ratedCurrent: specs.ratedCurrent,
+        motorEfficiency: specs.efficiency,
+        powerFactor: specs.powerFactor,
+        motorInertia: specs.inertia
+      });
+    }
+  };
+
+  const handleDriveVendorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const newVendor = e.target.value;
+      const firstModel = driveCatalog.find(d => d.vendor === newVendor);
+      const updates: any = { driveVendor: newVendor };
+      if (firstModel) {
+          updates.driveModel = firstModel.model;
+          updates.driveSupplyVoltage = firstModel.supplyVoltage;
+          updates.driveMaxCurrent = firstModel.maxCurrent;
+          updates.pwmFrequency = firstModel.pwmFrequency;
+      }
+      onUpdate(updates);
+  }
+
+  const handleDriveModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const modelName = e.target.value;
+      const specs = driveCatalog.find(d => d.model === modelName);
+      if (specs) {
+          onUpdate({
+              driveModel: modelName,
+              driveSupplyVoltage: specs.supplyVoltage,
+              driveMaxCurrent: specs.maxCurrent,
+              pwmFrequency: specs.pwmFrequency
+          });
+      }
+  }
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-8 mb-4">
+        <div>
+          <SectionHeader title="Motor Selection" />
+          <InputGroup label="Vendor">
+            <Select value={params.motorVendor} options={uniqueMotorVendors} onChange={handleMotorVendorChange} />
+          </InputGroup>
+          <InputGroup label="Model">
+             <Select value={params.motorModel} options={availableMotors.map(m => m.model)} onChange={handleMotorModelChange} />
+          </InputGroup>
+          <InputGroup label="Rated Speed" unit="rpm">
+            <NumberInput value={params.ratedSpeed} readOnly />
+          </InputGroup>
+          <InputGroup label="Rated Torque" unit="Nm">
+            <NumberInput value={params.ratedTorque} readOnly />
+          </InputGroup>
+          <InputGroup label="Rated Power" unit="kW">
+            <NumberInput value={params.ratedPower} readOnly />
+          </InputGroup>
+          <InputGroup label="Rated Current" unit="Arms">
+            <NumberInput value={params.ratedCurrent} readOnly />
+          </InputGroup>
+          <InputGroup label="Efficiency" unit="%">
+            <NumberInput value={params.motorEfficiency} readOnly />
+          </InputGroup>
+          <InputGroup label="Power Factor" unit="cosφ">
+            <NumberInput value={params.powerFactor} readOnly />
+          </InputGroup>
+          <InputGroup label="Inertia" unit="kg·cm²">
+            <NumberInput value={params.motorInertia} readOnly />
+          </InputGroup>
+        </div>
+        <div>
+          <SectionHeader title="Drive / Inverter" />
+          <InputGroup label="Vendor">
+            <Select value={params.driveVendor || params.motorVendor} options={uniqueDriveVendors} onChange={handleDriveVendorChange} />
+          </InputGroup>
+          <InputGroup label="Model">
+             <Select value={params.driveModel} options={availableDrives.map(d => d.model)} onChange={handleDriveModelChange} />
+          </InputGroup>
+          <InputGroup label="Supply Voltage" unit="V">
+            <NumberInput value={params.driveSupplyVoltage} readOnly />
+          </InputGroup>
+          <InputGroup label="PWM Frequency" unit="kHz">
+             {/* Often configurable even within a model constraint, so we might leave as Select or ReadOnly */}
+            <NumberInput value={params.pwmFrequency} readOnly />
+          </InputGroup>
+          <InputGroup label="Max Current" unit="A">
+            <NumberInput value={params.driveMaxCurrent} readOnly />
+          </InputGroup>
+        </div>
+      </div>
+      
+      <SectionHeader title="Performance Curves" />
+      <div className="grid grid-cols-2 gap-4">
+         <div className="border border-gray-300 bg-white h-48 relative p-2">
+            <div className="text-[10px] text-gray-500 absolute top-1 left-1">Torque vs Speed</div>
+            <div className="w-full h-full flex items-end">
+               {/* Fake Curve */}
+               <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                 <path d="M0,10 L40,10 L80,50 L100,90" fill="none" stroke="red" strokeWidth="2" />
+                 <path d="M0,90 L100,90" stroke="black" strokeWidth="1" />
+                 <path d="M0,0 L0,100" stroke="black" strokeWidth="1" />
+               </svg>
+            </div>
+         </div>
+         <div className="border border-gray-300 bg-white h-48 relative p-2">
+            <div className="text-[10px] text-gray-500 absolute top-1 left-1">Current vs Speed</div>
+            <div className="w-full h-full flex items-end">
+               <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <path d="M0,90 L60,80 L100,20" fill="none" stroke="blue" strokeWidth="2" />
+                  <path d="M0,90 L100,90" stroke="black" strokeWidth="1" />
+                  <path d="M0,0 L0,100" stroke="black" strokeWidth="1" />
+               </svg>
+            </div>
+         </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
+
+const AxisForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
+  const handleChange = (key: string, value: any) => {
+    onUpdate({ [key]: value });
+  };
+  return (
+    <div>
+      <div className="p-4 bg-yellow-50 border border-yellow-200 mb-4 rounded-sm text-xs text-yellow-800">
+        Select a specific component (Mechanism, Gearbox, Motor) from the tree to edit its parameters.
+      </div>
+      <div className="grid grid-cols-2 gap-8">
+        <div>
+          <InputGroup label="Axis Name">
+            <input type="text" className="w-full text-xs border border-gray-300 px-1 h-6" value={params.axisName} onChange={(e) => handleChange('axisName', e.target.value)} />
+          </InputGroup>
+          <InputGroup label="Profile Type">
+             <Select value={params.profileType} options={['Time Based', 'Master/Follower', 'Camming']} onChange={(e) => handleChange('profileType', e.target.value)} />
+          </InputGroup>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 /* --- Main Form Container --- */
 
-export const WorkArea = ({ data, selectedNode }: { data: TreeNode[], selectedNode: TreeNode }) => {
+export const WorkArea = ({ data, selectedNode, onUpdateNode }: { data: TreeNode[], selectedNode: TreeNode, onUpdateNode: (id: string, params: any) => void }) => {
   // Extract axes from the tree structure for visualizer
   const rootNode = data.find(n => n.id === 'root');
   
@@ -371,13 +509,22 @@ export const WorkArea = ({ data, selectedNode }: { data: TreeNode[], selectedNod
   
   const [activeTab, setActiveTab] = useState('Data');
 
+  const params = selectedNode.parameters || {};
+
+  // Wrapper for child components to update the specific node
+  const handleNodeUpdate = (newParams: any) => {
+    onUpdateNode(selectedNode.id, newParams);
+  };
+
   const renderFormContent = () => {
+    // We add a key to the component to force re-render when selectedNode changes, 
+    // ensuring defaultValues are updated from the new params.
     switch (selectedNode.type) {
-      case 'group': return <PowerGroupForm />;
-      case 'mechanism': return <MechanismForm />;
-      case 'gearbox': return <GearboxForm />;
-      case 'motor_drive': return <MotorDriveForm />;
-      case 'axis': return <AxisForm />;
+      case 'group': return <PowerGroupForm key={selectedNode.id} params={params} onUpdate={handleNodeUpdate} />;
+      case 'mechanism': return <MechanismForm key={selectedNode.id} params={params} onUpdate={handleNodeUpdate} />;
+      case 'gearbox': return <GearboxForm key={selectedNode.id} params={params} onUpdate={handleNodeUpdate} />;
+      case 'motor_drive': return <MotorDriveForm key={selectedNode.id} params={params} onUpdate={handleNodeUpdate} />;
+      case 'axis': return <AxisForm key={selectedNode.id} params={params} onUpdate={handleNodeUpdate} />;
       default: return <div className="text-gray-400 italic p-4">Select an item to configure</div>;
     }
   };

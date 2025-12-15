@@ -5,42 +5,7 @@ import { WorkArea } from './components/MainView';
 import { WizardPanel } from './components/WizardPanel';
 import { HelpCircle } from 'lucide-react';
 import { TreeNode } from './types';
-
-const INITIAL_DATA: TreeNode[] = [
-  {
-    id: 'root',
-    label: 'Power Group',
-    icon: 'group',
-    type: 'group',
-    expanded: true,
-    children: [
-      { 
-        id: 'x', 
-        label: 'Axis 1', 
-        icon: 'axis',
-        type: 'axis',
-        expanded: true,
-        children: [
-           { id: 'xc', label: 'Conveyor', icon: 'component', type: 'mechanism' },
-           { id: 'xg', label: 'T1: Gearbox', icon: 'component', type: 'gearbox' },
-           { id: 'xd', label: 'Drive & Motor', icon: 'drive', type: 'motor_drive' },
-        ]
-      },
-      { 
-        id: 'y', 
-        label: 'Axis 2', 
-        icon: 'axis',
-        type: 'axis',
-        expanded: true,
-        children: [
-           { id: 'yc', label: 'Rack & Pinion', icon: 'component', type: 'mechanism' },
-           { id: 'yg', label: 'T1: Gearbox', icon: 'component', type: 'gearbox' },
-           { id: 'yd', label: 'Drive & Motor', icon: 'drive', type: 'motor_drive' },
-        ]
-      },
-    ]
-  }
-];
+import { initialData } from './initialData';
 
 const Footer = () => (
   <div className="h-6 bg-win-blue/10 border-t border-gray-300 flex items-center px-2 text-xs text-gray-600 justify-between shrink-0">
@@ -60,7 +25,7 @@ const Footer = () => (
 );
 
 const App = () => {
-  const [data, setData] = useState<TreeNode[]>(INITIAL_DATA);
+  const [data, setData] = useState<TreeNode[]>(initialData);
   const [selectedNodeId, setSelectedNodeId] = useState<string>('root');
 
   const toggleNode = (id: string) => {
@@ -80,6 +45,22 @@ const App = () => {
 
   const handleSelect = (id: string) => {
     setSelectedNodeId(id);
+  };
+
+  // Function to update the parameters of a specific node
+  const handleUpdateNode = (id: string, newParams: Record<string, any>) => {
+    const updateRecursive = (nodes: TreeNode[]): TreeNode[] => {
+      return nodes.map(node => {
+        if (node.id === id) {
+          return { ...node, parameters: { ...node.parameters, ...newParams } };
+        }
+        if (node.children) {
+          return { ...node, children: updateRecursive(node.children) };
+        }
+        return node;
+      });
+    };
+    setData(updateRecursive(data));
   };
 
   const addAxis = () => {
@@ -124,10 +105,63 @@ const App = () => {
           icon: 'axis',
           type: 'axis',
           expanded: true,
+          parameters: {
+             axisName: axisLabel,
+             profileType: 'Time Based'
+          },
           children: [
-            { id: `${newId}_c`, label: 'Mechanism', icon: 'component', type: 'mechanism' },
-            { id: `${newId}_g`, label: 'Gearbox', icon: 'component', type: 'gearbox' },
-            { id: `${newId}_d`, label: 'Drive & Motor', icon: 'drive', type: 'motor_drive' },
+            { 
+              id: `${newId}_c`, 
+              label: 'Mechanism', 
+              icon: 'component', 
+              type: 'mechanism',
+              parameters: {
+                mechanismType: "Conveyor",
+                massLoad: "10.0",
+                massBelt: "1.0",
+                frictionCoeff: "0.1",
+                inclineAngle: "0",
+                pulleyRadius: "25.0",
+                additionalForce: "0"
+              }
+            },
+            { 
+              id: `${newId}_g`, 
+              label: 'Gearbox', 
+              icon: 'component', 
+              type: 'gearbox',
+              parameters: {
+               vendor: "Generic",
+               model: "G-10-1",
+               ratio: "1.0",
+               efficiency: "98",
+               inertia: "0.1",
+               backlash: "5",
+               maxInputSpeed: "4000"
+             }
+            },
+            { 
+              id: `${newId}_d`, 
+              label: 'Drive & Motor', 
+              icon: 'drive', 
+              type: 'motor_drive',
+              parameters: {
+               motorVendor: "Generic",
+               motorModel: "Motor-X",
+               ratedSpeed: "3000",
+               ratedTorque: "1.0",
+               ratedPower: "0.5",
+               ratedCurrent: "1.2",
+               motorEfficiency: "90.0",
+               powerFactor: "0.85",
+               motorInertia: "0.5",
+               driveVendor: "Generic",
+               driveModel: "Drive-X",
+               driveSupplyVoltage: "230",
+               pwmFrequency: "8",
+               driveMaxCurrent: "5.0"
+             }
+            },
           ]
         };
 
@@ -146,6 +180,15 @@ const App = () => {
       icon: 'group',
       type: 'group',
       expanded: true,
+      parameters: {
+        cycleTime: "10",
+        configuration: "Multi-Axis",
+        supplyVoltage: "400",
+        supplyPhase: "3",
+        nominalBusVoltage: "540",
+        infeedPeakPower: "0",
+        targetBusVoltage: "0"
+      },
       children: []
     };
     setData([...data, newGroup]);
@@ -180,7 +223,11 @@ const App = () => {
         
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col relative min-w-0">
-          <WorkArea data={data} selectedNode={selectedNode} />
+          <WorkArea 
+            data={data} 
+            selectedNode={selectedNode} 
+            onUpdateNode={handleUpdateNode}
+          />
         </div>
 
         <WizardPanel />
