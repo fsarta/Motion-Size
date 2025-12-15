@@ -1,59 +1,18 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ChevronRight, ChevronDown, Folder, Server, Box, Disc, Activity } from 'lucide-react';
 import { TreeNode } from '../types';
-
-const INITIAL_DATA: TreeNode[] = [
-  {
-    id: 'root',
-    label: 'Power Group',
-    icon: 'group',
-    expanded: true,
-    children: [
-      { id: 'm', label: 'Master', icon: 'drive' },
-      { 
-        id: 'x', 
-        label: 'X Axis', 
-        icon: 'axis',
-        expanded: true,
-        children: [
-           { id: 'xc', label: 'Conveyor', icon: 'component' },
-           { id: 'xg', label: 'T1: Gearbox', icon: 'component' },
-           { id: 'xd', label: 'Drive & Motor', icon: 'drive' },
-        ]
-      },
-      { 
-        id: 'y', 
-        label: 'Y Axis', 
-        icon: 'axis',
-        expanded: true,
-        children: [
-           { id: 'yc', label: 'Conveyor', icon: 'component' },
-           { id: 'yg', label: 'T1: Gearbox', icon: 'component' },
-           { id: 'yd', label: 'Drive & Motor', icon: 'drive' },
-        ]
-      },
-      { 
-        id: 'z', 
-        label: 'Z Axis', 
-        icon: 'axis',
-        children: [
-           { id: 'zc', label: 'Conveyor', icon: 'component' },
-           { id: 'zg', label: 'T1: Gearbox', icon: 'component' },
-           { id: 'zd', label: 'Drive & Motor', icon: 'drive' },
-        ]
-      },
-    ]
-  }
-];
 
 interface TreeItemProps {
   node: TreeNode;
   level: number;
   onToggle: (id: string) => void;
+  onSelect: (id: string) => void;
+  selectedId: string;
 }
 
-const TreeItem: React.FC<TreeItemProps> = ({ node, level, onToggle }) => {
+const TreeItem: React.FC<TreeItemProps> = ({ node, level, onToggle, onSelect, selectedId }) => {
   const hasChildren = node.children && node.children.length > 0;
+  const isSelected = node.id === selectedId;
   
   const getIcon = (type: string) => {
     switch(type) {
@@ -68,11 +27,20 @@ const TreeItem: React.FC<TreeItemProps> = ({ node, level, onToggle }) => {
   return (
     <div>
       <div 
-        className={`flex items-center py-0.5 hover:bg-win-hover cursor-pointer border border-transparent hover:border-win-border text-sm select-none ${node.id === 'root' ? 'bg-gray-200 font-semibold' : ''}`}
+        className={`flex items-center py-0.5 cursor-pointer border border-transparent text-sm select-none
+          ${isSelected ? 'bg-win-select border-win-border' : 'hover:bg-win-hover hover:border-win-border'}
+          ${node.id === 'root' && !isSelected ? 'bg-gray-100 font-semibold' : ''}
+        `}
         style={{ paddingLeft: `${level * 16 + 4}px` }}
-        onClick={() => hasChildren && onToggle(node.id)}
+        onClick={() => onSelect(node.id)}
       >
-        <div className="w-4 h-4 flex items-center justify-center mr-1">
+        <div 
+          className="w-4 h-4 flex items-center justify-center mr-1"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (hasChildren) onToggle(node.id);
+          }}
+        >
           {hasChildren && (
             node.expanded ? <ChevronDown size={12} className="text-gray-500" /> : <ChevronRight size={12} className="text-gray-500" />
           )}
@@ -83,7 +51,14 @@ const TreeItem: React.FC<TreeItemProps> = ({ node, level, onToggle }) => {
       {node.expanded && node.children && (
         <div>
           {node.children.map(child => (
-            <TreeItem key={child.id} node={child} level={level + 1} onToggle={onToggle} />
+            <TreeItem 
+              key={child.id} 
+              node={child} 
+              level={level + 1} 
+              onToggle={onToggle}
+              onSelect={onSelect}
+              selectedId={selectedId}
+            />
           ))}
         </div>
       )}
@@ -91,24 +66,14 @@ const TreeItem: React.FC<TreeItemProps> = ({ node, level, onToggle }) => {
   );
 };
 
-export const TreeView = () => {
-  const [data, setData] = useState(INITIAL_DATA);
+interface TreeViewProps {
+  data: TreeNode[];
+  onToggle: (id: string) => void;
+  onSelect: (id: string) => void;
+  selectedId: string;
+}
 
-  const toggleNode = (id: string) => {
-    const toggleRecursive = (nodes: TreeNode[]): TreeNode[] => {
-      return nodes.map(node => {
-        if (node.id === id) {
-          return { ...node, expanded: !node.expanded };
-        }
-        if (node.children) {
-          return { ...node, children: toggleRecursive(node.children) };
-        }
-        return node;
-      });
-    };
-    setData(toggleRecursive(data));
-  };
-
+export const TreeView: React.FC<TreeViewProps> = ({ data, onToggle, onSelect, selectedId }) => {
   return (
     <div className="w-64 bg-white border-r border-gray-300 h-full flex flex-col shrink-0">
       <div className="bg-gray-600 text-white text-xs px-2 py-1 font-bold flex justify-between items-center">
@@ -117,7 +82,14 @@ export const TreeView = () => {
       </div>
       <div className="flex-1 overflow-y-auto py-1">
         {data.map(node => (
-          <TreeItem key={node.id} node={node} level={0} onToggle={toggleNode} />
+          <TreeItem 
+            key={node.id} 
+            node={node} 
+            level={0} 
+            onToggle={onToggle} 
+            onSelect={onSelect}
+            selectedId={selectedId}
+          />
         ))}
       </div>
     </div>

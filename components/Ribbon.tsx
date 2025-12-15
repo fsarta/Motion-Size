@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   File, FolderOpen, Save, Printer, Settings, 
   Activity, Play, StopCircle, Calculator, 
-  HelpCircle, Box, Zap
+  HelpCircle, Box, Zap, PlusSquare
 } from 'lucide-react';
 
 const MenuBar = () => (
@@ -17,8 +17,11 @@ const MenuBar = () => (
   </div>
 );
 
-const RibbonButton: React.FC<{ icon: React.ReactNode; label: string; sub?: boolean }> = ({ icon, label, sub }) => (
-  <div className="flex flex-col items-center justify-center px-3 py-1 hover:bg-win-hover hover:border-win-select border border-transparent cursor-pointer rounded-sm group h-full">
+const RibbonButton: React.FC<{ icon: React.ReactNode; label: string; sub?: boolean; onClick?: () => void }> = ({ icon, label, sub, onClick }) => (
+  <div 
+    onClick={onClick}
+    className="flex flex-col items-center justify-center px-3 py-1 hover:bg-win-hover hover:border-win-select border border-transparent cursor-pointer rounded-sm group h-full select-none"
+  >
     <div className="text-gray-600 group-hover:text-blue-600 mb-0.5">
       {icon}
     </div>
@@ -31,7 +34,11 @@ const RibbonButton: React.FC<{ icon: React.ReactNode; label: string; sub?: boole
 
 const Separator = () => <div className="w-px h-10 bg-gray-300 mx-1"></div>;
 
-export const Ribbon = () => {
+interface RibbonProps {
+  onAddAxis?: () => void;
+}
+
+export const Ribbon: React.FC<RibbonProps> = ({ onAddAxis }) => {
   return (
     <div className="flex flex-col w-full bg-gray-50 border-b border-gray-300 shadow-sm shrink-0">
       <MenuBar />
@@ -43,6 +50,7 @@ export const Ribbon = () => {
         
         <Separator />
         
+        <RibbonButton icon={<PlusSquare size={20} className="text-green-600" />} label="Add Axis" onClick={onAddAxis} />
         <RibbonButton icon={<Settings size={20} />} label="Manage Axes" />
         <RibbonButton icon={<Activity size={20} className="text-yellow-600" />} label="System Check" />
         <RibbonButton icon={<Box size={20} />} label="Project Notes" />
