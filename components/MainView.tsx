@@ -199,7 +199,7 @@ const NumberInput = ({ value, onChange, className = "w-full", readOnly }: { valu
     value={value} 
     onChange={onChange}
     readOnly={readOnly}
-    className={`${className} text-right text-xs border border-gray-300 bg-white px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500' : ''}`} 
+    className={`${className} text-right text-xs border border-gray-300 bg-white px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`} 
   />
 );
 
@@ -284,11 +284,26 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
   };
   
   // Wrapper to handle input unit conversion
-  const handleUnitChange = (key: string, value: string, type: 'mass' | 'length' | 'force') => {
+  const handleUnitChange = (key: string, value: string, type: 'mass' | 'length' | 'force' | 'inertia') => {
     // Convert the display value (in current system) back to metric for storage
     const metricValue = toMetric(value, type, system);
     onUpdate({ [key]: metricValue });
   };
+
+  const mechType = params.mechanismType || 'Conveyor';
+
+  // Determine field visibility/enabling based on mechanism type
+  const isConveyor = mechType === 'Conveyor';
+  const isRackPinion = mechType === 'Rack & Pinion';
+  const isBallScrew = mechType === 'Ball Screw';
+  const isRotary = mechType === 'Rotary Table';
+  const isLinear = mechType === 'Linear Actuator';
+
+  // Dynamic Labels
+  const radiusLabel = isRackPinion ? "Pinion Radius" : "Drive Pulley Radius";
+  const massLoadLabel = isRotary ? "Load Inertia" : "Mass of Load";
+  const massLoadUnit = isRotary ? getUnit('inertia', system) : getUnit('mass', system);
+  const massLoadType = isRotary ? 'inertia' : 'mass';
 
   return (
     <div className="relative">
@@ -299,34 +314,73 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
       <div className="grid grid-cols-2 gap-8">
         <div>
           <InputGroup label="Mechanism Type">
-            <Select value={params.mechanismType} options={['Conveyor', 'Rack & Pinion', 'Ball Screw', 'Rotary Table']} onChange={(e) => handleChange('mechanismType', e.target.value)} />
-          </InputGroup>
-          <InputGroup label="Mass of Load" unit={getUnit('mass', system)}>
-            <NumberInput 
-              value={convert(params.massLoad, 'mass', system)} 
-              onChange={(e) => handleUnitChange('massLoad', e.target.value, 'mass')} 
+            <Select 
+              value={mechType} 
+              options={['Conveyor', 'Rack & Pinion', 'Ball Screw', 'Rotary Table', 'Linear Actuator']} 
+              onChange={(e) => handleChange('mechanismType', e.target.value)} 
             />
           </InputGroup>
+          
+          <InputGroup label={massLoadLabel} unit={massLoadUnit}>
+            <NumberInput 
+              value={convert(params.massLoad, massLoadType, system)} 
+              onChange={(e) => handleUnitChange('massLoad', e.target.value, massLoadType)} 
+            />
+          </InputGroup>
+
           <InputGroup label="Mass of Belt" unit={getUnit('mass', system)}>
             <NumberInput 
               value={convert(params.massBelt, 'mass', system)} 
-              onChange={(e) => handleUnitChange('massBelt', e.target.value, 'mass')} 
+              onChange={(e) => handleUnitChange('massBelt', e.target.value, 'mass')}
+              readOnly={!isConveyor} 
             />
           </InputGroup>
+
           <InputGroup label="Friction Coeff" unit="µ">
             <NumberInput value={params.frictionCoeff} onChange={(e) => handleChange('frictionCoeff', e.target.value)} />
           </InputGroup>
+
+          <InputGroup label="Incline Angle" unit="°">
+            <NumberInput 
+              value={params.inclineAngle} 
+              onChange={(e) => handleChange('inclineAngle', e.target.value)} 
+              readOnly={isRotary}
+            />
+          </InputGroup>
         </div>
         <div>
-          <InputGroup label="Incline Angle" unit="°">
-            <NumberInput value={params.inclineAngle} onChange={(e) => handleChange('inclineAngle', e.target.value)} />
-          </InputGroup>
-          <InputGroup label="Drive Pulley Radius" unit={getUnit('length', system)}>
+          <InputGroup label={radiusLabel} unit={getUnit('length', system)}>
             <NumberInput 
               value={convert(params.pulleyRadius, 'length', system)} 
               onChange={(e) => handleUnitChange('pulleyRadius', e.target.value, 'length')} 
+              readOnly={!isConveyor && !isRackPinion}
             />
           </InputGroup>
+
+           <InputGroup label="Screw Lead" unit={getUnit('length', system)}>
+            <NumberInput 
+              value={convert(params.screwLead, 'length', system)} 
+              onChange={(e) => handleUnitChange('screwLead', e.target.value, 'length')} 
+              readOnly={!isBallScrew}
+            />
+          </InputGroup>
+
+          <InputGroup label="Screw Diameter" unit={getUnit('length', system)}>
+            <NumberInput 
+              value={convert(params.screwDiameter, 'length', system)} 
+              onChange={(e) => handleUnitChange('screwDiameter', e.target.value, 'length')} 
+              readOnly={!isBallScrew}
+            />
+          </InputGroup>
+          
+           <InputGroup label="Screw Length" unit={getUnit('length', system)}>
+            <NumberInput 
+              value={convert(params.screwLength, 'length', system)} 
+              onChange={(e) => handleUnitChange('screwLength', e.target.value, 'length')} 
+              readOnly={!isBallScrew}
+            />
+          </InputGroup>
+
           <InputGroup label="Additional Force" unit={getUnit('force', system)}>
             <NumberInput 
               value={convert(params.additionalForce, 'force', system)} 
