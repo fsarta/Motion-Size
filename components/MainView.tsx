@@ -258,6 +258,18 @@ const MotorDriveForm = () => (
         <InputGroup label="Rated Torque" unit="Nm">
           <NumberInput value="6.0" />
         </InputGroup>
+        <InputGroup label="Rated Power" unit="kW">
+          <NumberInput value="1.88" />
+        </InputGroup>
+        <InputGroup label="Rated Current" unit="Arms">
+          <NumberInput value="4.2" />
+        </InputGroup>
+        <InputGroup label="Efficiency" unit="%">
+          <NumberInput value="93.0" />
+        </InputGroup>
+        <InputGroup label="Power Factor" unit="cosφ">
+          <NumberInput value="0.92" />
+        </InputGroup>
         <InputGroup label="Inertia" unit="kg·cm²">
           <NumberInput value="3.4" />
         </InputGroup>
