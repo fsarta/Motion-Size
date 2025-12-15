@@ -139,6 +139,12 @@ const PowerGroupForm = () => (
       <InputGroup label="Cycle time" unit="s">
         <NumberInput value="10" />
       </InputGroup>
+      <InputGroup label="Configuration">
+         <Select value="Multi-Axis" options={['Multi-Axis', 'Independent', 'Robotic']} />
+      </InputGroup>
+      
+      <div className="h-4 border-b border-gray-300 mb-2 mt-1"></div>
+
       <InputGroup label="Supply" unit="Ø">
          <div className="flex w-full space-x-1 items-center">
            <Select value="400" options={['230', '480']} />
@@ -326,7 +332,30 @@ const AxisForm = () => (
 export const WorkArea = ({ data, selectedNode }: { data: TreeNode[], selectedNode: TreeNode }) => {
   // Extract axes from the tree structure for visualizer
   const rootNode = data.find(n => n.id === 'root');
-  const axes = rootNode?.children?.filter(n => n.icon === 'axis') || [];
+  
+  // Find the active group based on selection
+  let activeGroup = rootNode;
+  if (selectedNode) {
+     const findGroup = (nodes: TreeNode[]): TreeNode | null => {
+        for(const node of nodes) {
+           if (node.type === 'group') {
+              if (node.id === selectedNode.id) return node;
+              // check descendants
+              const hasNode = (p: TreeNode, target: string): boolean => {
+                 if (p.id === target) return true;
+                 if (p.children) return p.children.some(c => hasNode(c, target));
+                 return false;
+              }
+              if (node.children && node.children.some(c => hasNode(c, selectedNode.id))) return node;
+           }
+        }
+        return null;
+     }
+     const found = findGroup(data);
+     if (found) activeGroup = found;
+  }
+
+  const axes = activeGroup?.children?.filter(n => n.icon === 'axis') || [];
   
   const [activeTab, setActiveTab] = useState('Data');
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, ChevronDown, Folder, Server, Box, Disc, Activity } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, Server, Box, Disc, Activity, Plus } from 'lucide-react';
 import { TreeNode } from '../types';
 
 interface TreeItemProps {
@@ -71,13 +71,14 @@ interface TreeViewProps {
   onToggle: (id: string) => void;
   onSelect: (id: string) => void;
   selectedId: string;
+  onAddGroup: () => void;
 }
 
-export const TreeView: React.FC<TreeViewProps> = ({ data, onToggle, onSelect, selectedId }) => {
+export const TreeView: React.FC<TreeViewProps> = ({ data, onToggle, onSelect, selectedId, onAddGroup }) => {
   return (
     <div className="w-64 bg-white border-r border-gray-300 h-full flex flex-col shrink-0">
       <div className="bg-gray-600 text-white text-xs px-2 py-1 font-bold flex justify-between items-center">
-        <span>Power Group</span>
+        <span>Project Overview</span>
         <span className="bg-green-500 text-white px-1 rounded text-[10px]">79%</span>
       </div>
       <div className="flex-1 overflow-y-auto py-1">
@@ -91,6 +92,14 @@ export const TreeView: React.FC<TreeViewProps> = ({ data, onToggle, onSelect, se
             selectedId={selectedId}
           />
         ))}
+      </div>
+      <div className="p-1 border-t border-gray-300 bg-gray-50">
+        <button 
+          onClick={onAddGroup}
+          className="flex items-center justify-center w-full py-1 text-xs text-gray-700 hover:bg-gray-200 border border-transparent hover:border-gray-300 rounded-sm"
+        >
+          <Plus size={12} className="mr-1" /> Add Group
+        </button>
       </div>
     </div>
   );

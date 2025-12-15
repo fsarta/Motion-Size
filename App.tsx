@@ -85,10 +85,35 @@ const App = () => {
   const addAxis = () => {
     setData(prev => {
       const newData = JSON.parse(JSON.stringify(prev)); // Deep clone
-      const root = newData.find((n: TreeNode) => n.id === 'root');
       
-      if (root && root.children) {
-        const existingAxes = root.children.filter((c: TreeNode) => c.type === 'axis');
+      let targetGroup: TreeNode | undefined = undefined;
+
+      // Helper to check if a node is a descendant of the group
+      const isDescendant = (node: TreeNode, targetId: string): boolean => {
+        if (node.id === targetId) return true;
+        if (node.children) {
+          return node.children.some(child => isDescendant(child, targetId));
+        }
+        return false;
+      };
+
+      // Find the group related to selection
+      for (const group of newData) {
+        if (group.type === 'group') {
+          if (group.id === selectedNodeId || (group.children && group.children.some(child => isDescendant(child, selectedNodeId)))) {
+            targetGroup = group;
+            break;
+          }
+        }
+      }
+
+      // Default to first group if no context found
+      if (!targetGroup && newData.length > 0 && newData[0].type === 'group') {
+        targetGroup = newData[0];
+      }
+
+      if (targetGroup && targetGroup.children) {
+        const existingAxes = targetGroup.children.filter((c: TreeNode) => c.type === 'axis');
         const count = existingAxes.length;
         const axisLabel = `Axis ${count + 1}`;
         const newId = `axis_${Date.now()}`;
@@ -106,10 +131,24 @@ const App = () => {
           ]
         };
 
-        root.children.push(newAxis);
+        targetGroup.children.push(newAxis);
+        targetGroup.expanded = true;
       }
       return newData;
     });
+  };
+
+  const addGroup = () => {
+    const newId = `group_${Date.now()}`;
+    const newGroup: TreeNode = {
+      id: newId,
+      label: `Power Group ${data.length + 1}`,
+      icon: 'group',
+      type: 'group',
+      expanded: true,
+      children: []
+    };
+    setData([...data, newGroup]);
   };
 
   // Helper to find the selected node object
@@ -136,6 +175,7 @@ const App = () => {
           onToggle={toggleNode} 
           onSelect={handleSelect} 
           selectedId={selectedNodeId} 
+          onAddGroup={addGroup}
         />
         
         {/* Main Content Area */}
