@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Zap, Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, List, Database, Gauge, Scale } from 'lucide-react';
 import { TreeNode } from '../types';
 import { motorCatalog, driveCatalog, gearboxCatalog } from '../catalogData';
-import { convert, getUnit, System, SystemType } from '../utils/unitConversion';
+import { convert, toMetric, getUnit, System, SystemType } from '../utils/unitConversion';
 
 /* --- Visualization Components --- */
 
@@ -277,21 +277,41 @@ const PowerGroupForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) 
 };
 
 const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
+  const [system, setSystem] = useState<SystemType>(System.METRIC);
+
   const handleChange = (key: string, value: any) => {
     onUpdate({ [key]: value });
   };
+  
+  // Wrapper to handle input unit conversion
+  const handleUnitChange = (key: string, value: string, type: 'mass' | 'length' | 'force') => {
+    // Convert the display value (in current system) back to metric for storage
+    const metricValue = toMetric(value, type, system);
+    onUpdate({ [key]: metricValue });
+  };
+
   return (
-    <div>
+    <div className="relative">
+      <div className="absolute top-0 right-0 -mt-10">
+         <UnitToggle system={system} onChange={setSystem} />
+      </div>
+
       <div className="grid grid-cols-2 gap-8">
         <div>
           <InputGroup label="Mechanism Type">
             <Select value={params.mechanismType} options={['Conveyor', 'Rack & Pinion', 'Ball Screw', 'Rotary Table']} onChange={(e) => handleChange('mechanismType', e.target.value)} />
           </InputGroup>
-          <InputGroup label="Mass of Load" unit="kg">
-            <NumberInput value={params.massLoad} onChange={(e) => handleChange('massLoad', e.target.value)} />
+          <InputGroup label="Mass of Load" unit={getUnit('mass', system)}>
+            <NumberInput 
+              value={convert(params.massLoad, 'mass', system)} 
+              onChange={(e) => handleUnitChange('massLoad', e.target.value, 'mass')} 
+            />
           </InputGroup>
-          <InputGroup label="Mass of Belt" unit="kg">
-            <NumberInput value={params.massBelt} onChange={(e) => handleChange('massBelt', e.target.value)} />
+          <InputGroup label="Mass of Belt" unit={getUnit('mass', system)}>
+            <NumberInput 
+              value={convert(params.massBelt, 'mass', system)} 
+              onChange={(e) => handleUnitChange('massBelt', e.target.value, 'mass')} 
+            />
           </InputGroup>
           <InputGroup label="Friction Coeff" unit="µ">
             <NumberInput value={params.frictionCoeff} onChange={(e) => handleChange('frictionCoeff', e.target.value)} />
@@ -301,11 +321,17 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
           <InputGroup label="Incline Angle" unit="°">
             <NumberInput value={params.inclineAngle} onChange={(e) => handleChange('inclineAngle', e.target.value)} />
           </InputGroup>
-          <InputGroup label="Drive Pulley Radius" unit="mm">
-            <NumberInput value={params.pulleyRadius} onChange={(e) => handleChange('pulleyRadius', e.target.value)} />
+          <InputGroup label="Drive Pulley Radius" unit={getUnit('length', system)}>
+            <NumberInput 
+              value={convert(params.pulleyRadius, 'length', system)} 
+              onChange={(e) => handleUnitChange('pulleyRadius', e.target.value, 'length')} 
+            />
           </InputGroup>
-          <InputGroup label="Additional Force" unit="N">
-            <NumberInput value={params.additionalForce} onChange={(e) => handleChange('additionalForce', e.target.value)} />
+          <InputGroup label="Additional Force" unit={getUnit('force', system)}>
+            <NumberInput 
+              value={convert(params.additionalForce, 'force', system)} 
+              onChange={(e) => handleUnitChange('additionalForce', e.target.value, 'force')} 
+            />
           </InputGroup>
         </div>
       </div>

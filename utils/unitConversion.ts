@@ -53,6 +53,25 @@ export const convert = (
   }
 };
 
+export const toMetric = (
+  value: string | number, 
+  type: UnitType, 
+  sourceSystem: SystemType
+): string => {
+  const numValue = typeof value === 'string' ? parseFloat(value) : value;
+  if (isNaN(numValue)) return String(value);
+
+  const def = CONVERSIONS[type];
+  if (!def) return String(numValue);
+
+  if (sourceSystem === System.METRIC) {
+    return String(numValue);
+  } else {
+    // Convert Imperial back to Metric
+    return (numValue / def.factor).toFixed(4); // Use reasonable precision for storage
+  }
+};
+
 export const getUnit = (type: UnitType, targetSystem: SystemType): string => {
   const def = CONVERSIONS[type];
   if (!def) return '';
