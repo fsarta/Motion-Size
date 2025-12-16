@@ -3,6 +3,7 @@ import { Zap, Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, Database, 
 import { TreeNode } from '../types';
 import { motorCatalog, driveCatalog, gearboxCatalog } from '../catalogData';
 import { InertiaCalculatorModal } from './InertiaCalculatorModal';
+import { FrictionCalculatorModal } from './FrictionCalculatorModal';
 import { UnitType } from '../utils/unitConversion';
 import { UnitInput, InputGroup, Select } from './Common';
 
@@ -506,13 +507,27 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
   const loadSection = sections.find(s => s.section === 'Regarding Load');
   const otherSections = sections.filter(s => s.section !== 'Regarding Load');
 
+  // Determine which calculator to show based on the field name
+  const isFriction = calculatorField === 'frictionCoeff';
+  const isInertia = calculatorField && calculatorField.toLowerCase().includes('inertia');
+
   return (
     <div className="relative">
+      {/* Inertia Calculator Modal */}
       <InertiaCalculatorModal 
-        isOpen={!!calculatorField} 
+        isOpen={!!calculatorField && !!isInertia} 
         onClose={() => setCalculatorField(null)} 
         onAccept={handleCalculatorAccept}
         title={calculatorField ? `Calculate ${calculatorField}` : 'Calculator'}
+        initialValue={calculatorField ? params[calculatorField] : '0'}
+      />
+
+      {/* Friction Calculator Modal */}
+      <FrictionCalculatorModal
+        isOpen={!!calculatorField && !!isFriction}
+        onClose={() => setCalculatorField(null)}
+        onAccept={handleCalculatorAccept}
+        title="Friction Coefficient Calculator"
         initialValue={calculatorField ? params[calculatorField] : '0'}
       />
 
