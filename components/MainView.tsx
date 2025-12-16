@@ -866,7 +866,7 @@ export const WorkArea = ({ data, selectedNode, onUpdateNode }: { data: TreeNode[
 
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
-      <Visualizer axes={axes} />
+      {selectedNode.type === 'group' && <Visualizer axes={axes} />}
       
       <div className="flex-1 bg-win-bg p-2 overflow-y-auto flex flex-col min-h-0">
         {/* Toolbar for the form */}
