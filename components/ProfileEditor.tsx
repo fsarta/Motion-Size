@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Plus, Trash2, ZoomIn, ZoomOut, Lock, Unlock, ChevronRight, CheckSquare, Square, RefreshCw, Upload, FileText, Link as LinkIcon, Clock } from 'lucide-react';
+import { Plus, Trash2, ZoomIn, ZoomOut, Lock, Unlock, ChevronRight, CheckSquare, Square, RefreshCw, Upload, FileText, Link as LinkIcon, Clock, Lock as LockIcon } from 'lucide-react';
 import { UnitInput } from './Common';
 
 /* --- Types --- */
@@ -234,7 +234,15 @@ const processImportedData = (rawData: {t: number, pos: number}[], motorRatio: nu
 };
 
 
-export const ProfileEditor = ({ profileType = 'Time Based' }: { profileType?: ProfileType }) => {
+export const ProfileEditor = ({ 
+  profileType = 'Time Based',
+  masterAxisName = 'Virtual Master',
+  gearRatio = 1.0
+}: { 
+  profileType?: ProfileType,
+  masterAxisName?: string,
+  gearRatio?: number
+}) => {
   // Mode: Sequence Editor vs CSV Import
   const [mode, setMode] = useState<'sequence' | 'import'>('sequence');
 
@@ -422,20 +430,50 @@ export const ProfileEditor = ({ profileType = 'Time Based' }: { profileType?: Pr
       setTraces(prev => prev.map(t => t.key === key ? { ...t, active: !t.active } : t));
   };
 
-  const selectedSegment = segments.find(s => s.id === selectedId) || segments[0];
+  // -- Master Follower Logic --
+  // If Master/Follower is active, we override the segments for the Chart 
+  // with a simulated profile based on Gear Ratio
+  const isMasterFollower = profileType === 'Master/Follower';
+  const isCamming = profileType === 'Camming';
+
+  const activeSegments = useMemo(() => {
+     if (isMasterFollower) {
+         // Simulate a master cycle: 0 -> 360 -> 0 in 10 sec (just for viz)
+         // Follower does: 0 -> 360*Ratio -> 0
+         const simDur = 360; // Master "Duration" in degrees
+         const masterDist = 360;
+         const followerDist = masterDist * gearRatio;
+         const followerVel = followerDist / simDur; // Slope
+
+         // Construct a simple Traverse segment representing linear gearing
+         const simSeg: MotionSegment = {
+            id: 'sim', type: 'Dwell/Traverse',
+            duration: simDur, // Master Range
+            distance: followerDist,
+            velocity: gearRatio, // Ratio
+            startVelocity: gearRatio, endVelocity: gearRatio,
+            accel: 0, decel: 0, jerk: 0, payload: 0,
+            calcTarget: 'distance', distUnitType: 'angle'
+         };
+         return [simSeg];
+     }
+     return segments;
+  }, [segments, isMasterFollower, gearRatio]);
+
+  const selectedSegment = isMasterFollower ? activeSegments[0] : (segments.find(s => s.id === selectedId) || segments[0]);
   
   const gridData = useMemo(() => {
       let absPos = 0;
-      return segments.map(s => {
+      return activeSegments.map(s => {
           absPos += s.distance;
           return { ...s, absPos };
       });
-  }, [segments]);
+  }, [activeSegments]);
 
   const timeSeries = useMemo(() => {
       if (mode === 'import') return importedData;
-      return simulateMotion(segments, motorRatio, 0.05, profileType, masterSpeed);
-  }, [segments, motorRatio, mode, importedData, profileType, masterSpeed]);
+      return simulateMotion(activeSegments, motorRatio, 0.05, profileType, masterSpeed);
+  }, [activeSegments, motorRatio, mode, importedData, profileType, masterSpeed]);
 
   const analysis = useMemo(() => {
      const res: Record<TraceType, { min: number, max: number, avg: number, rms: number }> = {} as any;
@@ -519,11 +557,11 @@ export const ProfileEditor = ({ profileType = 'Time Based' }: { profileType?: Pr
       setCursorTime(null);
   };
 
-  const isCamming = profileType === 'Camming' || profileType === 'Master/Follower';
-  const xLabel = isCamming ? "Master Position" : "Time";
-  const xUnit = isCamming ? "(deg or mm)" : "(s)";
-  const durationLabel = isCamming ? "Master Range" : "Duration";
-  const velocityLabel = isCamming ? "Slope (Ratio)" : "Velocity";
+  const isCammingOrMaster = isCamming || isMasterFollower;
+  const xLabel = isCammingOrMaster ? "Master Position" : "Time";
+  const xUnit = isCammingOrMaster ? "(deg or mm)" : "(s)";
+  const durationLabel = isCammingOrMaster ? "Master Range" : "Duration";
+  const velocityLabel = isCammingOrMaster ? "Slope (Ratio)" : "Velocity";
 
   return (
     <div className="flex h-full border border-gray-300 bg-white font-sans text-xs">
@@ -554,11 +592,23 @@ export const ProfileEditor = ({ profileType = 'Time Based' }: { profileType?: Pr
             </div>
         )}
 
+        {isMasterFollower && mode === 'sequence' && (
+             <div className="bg-blue-50 text-blue-800 px-3 py-2 border-b border-blue-200 text-[10px] flex flex-col">
+                <div className="flex items-center font-bold mb-1">
+                    <LinkIcon size={12} className="mr-1"/> 
+                    <span>Synchronized to Master: {masterAxisName}</span>
+                </div>
+                <div className="text-blue-600 ml-4">
+                   Gear Ratio: {gearRatio.toFixed(3)}
+                </div>
+            </div>
+        )}
+
         {/* MODE: SEQUENCE EDITOR */}
         {mode === 'sequence' && (
             <>
                 {/* Grid */}
-                <div className="h-[40%] flex flex-col bg-white">
+                <div className={`h-[40%] flex flex-col bg-white ${isMasterFollower ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
                 <div className="h-7 bg-gray-50 border-b border-gray-300 flex items-center px-2 space-x-2 shrink-0">
                     <button onClick={addSegment} className="flex items-center px-2 py-0.5 bg-white border border-gray-300 rounded shadow-sm hover:bg-blue-50 text-xs text-gray-700">
                         <Plus size={12} className="mr-1 text-green-600"/> Add Step
@@ -568,7 +618,7 @@ export const ProfileEditor = ({ profileType = 'Time Based' }: { profileType?: Pr
                 <div className="grid grid-cols-[24px_110px_60px_70px_1fr_24px] bg-gray-200 border-b border-gray-300 font-semibold text-gray-700 py-1 shrink-0">
                     <div className="text-center">#</div>
                     <div className="px-1 border-l border-gray-300">Type</div>
-                    <div className="px-1 border-l border-gray-300 text-right">{isCamming ? 'M.Dist' : 'Time'}</div>
+                    <div className="px-1 border-l border-gray-300 text-right">{isCammingOrMaster ? 'M.Dist' : 'Time'}</div>
                     <div className="px-1 border-l border-gray-300 text-right">End Pos</div>
                     <div className="px-1 border-l border-gray-300 text-right">V End</div>
                     <div></div>
@@ -614,8 +664,20 @@ export const ProfileEditor = ({ profileType = 'Time Based' }: { profileType?: Pr
                 </div>
                 </div>
 
+                {isMasterFollower && (
+                   <div className="absolute top-[160px] left-[50px] w-[380px] bg-white border border-gray-300 shadow-xl p-4 flex flex-col items-center justify-center text-center z-10 opacity-95">
+                      <LockIcon size={32} className="text-gray-300 mb-2"/>
+                      <h3 className="font-bold text-gray-700">Sequence Editor Locked</h3>
+                      <p className="text-gray-500 mt-2">
+                        The motion profile is determined by the Master Axis and Gear Ratio.
+                        <br/>
+                        <span className="text-[10px] font-mono mt-1 block bg-gray-100 p-1">Pos = MasterPos * ({gearRatio.toFixed(4)})</span>
+                      </p>
+                   </div>
+                )}
+
                 {/* Details */}
-                <div className="flex-1 bg-gray-100 border-t border-gray-300 p-4 shadow-inner overflow-y-auto">
+                <div className={`flex-1 bg-gray-100 border-t border-gray-300 p-4 shadow-inner overflow-y-auto ${isMasterFollower ? 'opacity-50 pointer-events-none' : ''}`}>
                 {selectedSegment && (
                     <div className="flex gap-6">
                         <div className="flex-1 min-w-[160px]">
@@ -625,7 +687,7 @@ export const ProfileEditor = ({ profileType = 'Time Based' }: { profileType?: Pr
                             onToggleLock={() => handleLockClick(selectedSegment, 'duration')}
                         >
                             <UnitInput 
-                                type={isCamming ? "angle" : "time"} // In Camming, X is Angle (Master)
+                                type={isCammingOrMaster ? "angle" : "time"} // In Camming, X is Angle (Master)
                                 value={selectedSegment.duration}
                                 onChange={(v) => updateSegment(selectedSegment.id, { duration: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'duration' ? 'velocity' : selectedSegment.calcTarget })}
                                 readOnly={selectedSegment.calcTarget === 'duration'}
@@ -667,7 +729,7 @@ export const ProfileEditor = ({ profileType = 'Time Based' }: { profileType?: Pr
                             disabledLock={selectedSegment.type === 'Dwell/Traverse'}
                         >
                             <UnitInput 
-                                type={isCamming ? "ratio" : "speed"}
+                                type={isCammingOrMaster ? "ratio" : "speed"}
                                 value={selectedSegment.velocity}
                                 onChange={(v) => updateSegment(selectedSegment.id, { velocity: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'velocity' ? 'distance' : selectedSegment.calcTarget })}
                                 readOnly={selectedSegment.calcTarget === 'velocity' || selectedSegment.type === 'Dwell/Traverse'}
@@ -783,7 +845,7 @@ export const ProfileEditor = ({ profileType = 'Time Based' }: { profileType?: Pr
             </div>
 
             {/* Master Speed Sim (Visible Only in Camming) */}
-            {isCamming && (
+            {isCammingOrMaster && (
                 <div className="flex items-center space-x-1 bg-purple-50 border border-purple-200 rounded px-1">
                     <Clock size={10} className="text-purple-600"/>
                     <span className="text-[10px] text-purple-700 font-semibold">Master Vel:</span>

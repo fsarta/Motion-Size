@@ -114,6 +114,12 @@ export const WorkArea = ({
   };
 
   const profileType = params.profileType || 'Time Based';
+  
+  // Extract Gearing Info
+  const masterAxisName = String(params.masterAxis || 'Virtual Master');
+  const gearNum = parseFloat(String(params.gearRatioNum || '1'));
+  const gearDen = parseFloat(String(params.gearRatioDen || '1'));
+  const gearRatio = gearDen !== 0 ? gearNum / gearDen : 1;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
@@ -149,7 +155,11 @@ export const WorkArea = ({
             renderFormContent()
           ) : activeTab === 'Motion Profile' ? (
             <div className="h-full flex flex-col">
-              <ProfileEditor profileType={profileType as any} />
+              <ProfileEditor 
+                profileType={profileType as any} 
+                masterAxisName={masterAxisName}
+                gearRatio={gearRatio}
+              />
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-gray-400 text-xs italic border border-gray-200 border-dashed rounded bg-gray-50">
