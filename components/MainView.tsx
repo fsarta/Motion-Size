@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Zap, Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, List, Database, Gauge, Scale, Calculator } from 'lucide-react';
 import { TreeNode } from '../types';
 import { motorCatalog, driveCatalog, gearboxCatalog } from '../catalogData';
+import { InertiaCalculatorModal } from './InertiaCalculatorModal';
 import { 
   toDisplay, 
   toBase, 
@@ -186,13 +187,15 @@ const UnitInput = ({
   onChange, 
   type, 
   readOnly,
-  hasCalculator
+  hasCalculator,
+  onCalculatorClick
 }: { 
   value: string | number | undefined, 
   onChange: (val: string) => void, 
   type: UnitType, 
   readOnly?: boolean,
-  hasCalculator?: boolean
+  hasCalculator?: boolean,
+  onCalculatorClick?: () => void
 }) => {
   const [currentUnit, setCurrentUnit] = useState<string>(() => getDefaultUnit(type));
   const availableUnits = getUnitsForType(type);
@@ -231,7 +234,11 @@ const UnitInput = ({
         )}
       </div>
       {hasCalculator && (
-        <button className="ml-0.5 p-0.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-sm" title="Open Calculator">
+        <button 
+          onClick={onCalculatorClick}
+          className="ml-0.5 p-0.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-sm" 
+          title="Open Calculator"
+        >
            <Calculator size={12} className="text-gray-600"/>
         </button>
       )}
@@ -571,11 +578,27 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
 const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
   const mechType = params.mechanismType || 'Ball Screw';
   const sections = MECHANISM_CONFIG[mechType] || [];
+  const [calculatorField, setCalculatorField] = useState<string | null>(null);
 
   const handleChange = (key: string, value: any) => {
     onUpdate({ [key]: value });
   };
   
+  const handleOpenCalculator = (key: string) => {
+    setCalculatorField(key);
+  };
+
+  const handleCalculatorAccept = (value: string) => {
+    if (calculatorField) {
+      // The Calculator component returns Base Unit (kg m2).
+      // We store it directly as our app state assumes base units usually, 
+      // or we rely on the UnitInput to convert it for display if needed.
+      // However, UnitInput expects base units in `value` prop.
+      handleChange(calculatorField, value);
+      setCalculatorField(null);
+    }
+  };
+
   const renderField = (field: FieldConfig) => {
     return (
       <InputGroup key={field.key} label={field.label}>
@@ -584,6 +607,7 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
           onChange={(val) => handleChange(field.key, val)}
           type={field.unitType}
           hasCalculator={field.hasCalculator}
+          onCalculatorClick={() => handleOpenCalculator(field.key)}
         />
       </InputGroup>
     );
@@ -596,14 +620,19 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
     </div>
   );
 
-  // Group sections for 2-column layout
-  // Column 1: Load
-  // Column 2: Mechanism + Transmission
   const loadSection = sections.find(s => s.section === 'Regarding Load');
   const otherSections = sections.filter(s => s.section !== 'Regarding Load');
 
   return (
     <div className="relative">
+      <InertiaCalculatorModal 
+        isOpen={!!calculatorField} 
+        onClose={() => setCalculatorField(null)} 
+        onAccept={handleCalculatorAccept}
+        title={calculatorField ? `Calculate ${calculatorField}` : 'Calculator'}
+        initialValue={calculatorField ? params[calculatorField] : '0'}
+      />
+
       <div className="grid grid-cols-2 gap-8">
         <div>
           <InputGroup label="Mechanism Type">
@@ -616,7 +645,6 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
           {loadSection && renderSection(loadSection)}
         </div>
         <div>
-          {/* Spacer to align with Mechanism Type dropdown on the left */}
           <div className="h-[26px] mb-1.5"></div> 
           {otherSections.map(renderSection)}
         </div>
