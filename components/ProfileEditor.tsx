@@ -1,7 +1,6 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Trash2, ZoomIn, ZoomOut, BarChart2, Lock, Unlock, ChevronDown, ChevronRight, CheckSquare, Square, RefreshCw } from 'lucide-react';
-import { UnitInput, Select } from './Common';
-import { toBase } from '../utils/unitConversion';
+import React, { useState, useMemo, useRef } from 'react';
+import { Plus, Trash2, ZoomIn, ZoomOut, Lock, Unlock, ChevronRight, CheckSquare, Square, RefreshCw, Upload, FileText, Download } from 'lucide-react';
+import { UnitInput } from './Common';
 
 /* --- Types --- */
 
@@ -11,26 +10,16 @@ type CalcTarget = 'duration' | 'distance' | 'velocity';
 interface MotionSegment {
   id: string;
   type: SegmentType;
-  
-  // Basic Kinematics
   duration: number; 
   distance: number; 
   velocity: number; 
   startVelocity: number; 
   endVelocity: number;   
-  
-  // Dynamics
   accel: number; 
   decel: number;
   jerk: number;
-  
-  // Configuration
-  payload: number; // External force/torque
-  
-  // State
+  payload: number; 
   calcTarget: CalcTarget;
-  
-  // UI Preferences
   distUnitType: 'angle' | 'length';
 }
 
@@ -68,7 +57,7 @@ const DEFAULT_SEGMENTS: MotionSegment[] = [
     duration: 0.5, distance: 0, velocity: 0, 
     startVelocity: 0, endVelocity: 0,
     accel: 0, decel: 0, jerk: 0, payload: 0,
-    calcTarget: 'distance',
+    calcTarget: 'distance', 
     distUnitType: 'angle'
   },
 ];
@@ -112,45 +101,33 @@ const ReadOnlyRow = ({ label, children }: { label: string, children: React.React
 
 const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, totalInertia: number = 0.05): TimePoint[] => {
   const points: TimePoint[] = [];
-  const dt = 0.01; // 10ms sampling
+  const dt = 0.01; 
   let currentT = 0;
   let currentPos = 0;
 
   segments.forEach(seg => {
     const steps = Math.max(2, Math.ceil(seg.duration / dt));
     const realDt = seg.duration / steps;
-    
-    // Determine profile shape parameters locally
-    // Simple kinematics for visualization:
-    // Trapezoid: Accel -> Flat -> Decel
-    // Dwell/Traverse: Flat
-    // Accel/Decel: Linear Ramp
-    
     let t_local = 0;
     
-    // Pre-calculations for Trapezoid (symmetric 1/3, 1/3, 1/3 approximation)
+    // Trapezoid Params
     const t_acc = seg.duration / 3;
     const t_dec = seg.duration / 3;
     const t_flat = seg.duration - t_acc - t_dec;
-    const a_val = seg.accel; 
-    const d_val = seg.decel;
     
-    // For linear ramp (Accel/Decel)
     const slope = (seg.velocity - seg.startVelocity) / seg.duration;
 
     for (let i = 0; i <= steps; i++) {
         let v = 0;
         let a = 0;
-        let j = 0;
+        let j = 0; // Jerk simplified
 
         if (seg.type === 'Dwell/Traverse') {
-            v = seg.velocity; // Constant
+            v = seg.velocity; 
             a = 0;
-            j = 0;
         } else if (seg.type === 'Accel/Decel') {
             v = seg.startVelocity + slope * t_local;
             a = slope;
-            j = 0;
         } else if (seg.type === 'Trapezoid') {
             if (t_local < t_acc) {
                 a = (seg.velocity > 0 ? 1 : -1) * Math.abs(seg.accel);
@@ -163,28 +140,13 @@ const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, tota
                 const t_dec_local = t_local - (t_acc + t_flat);
                 v = seg.velocity + a * t_dec_local;
             }
-        } else if (seg.type === 'Triangle') {
-            const t_half = seg.duration / 2;
-            if (t_local < t_half) {
-                a = (seg.velocity > 0 ? 1 : -1) * Math.abs(seg.accel);
-                v = a * t_local;
-            } else {
-                a = (seg.velocity > 0 ? -1 : 1) * Math.abs(seg.decel);
-                const t_dec_local = t_local - t_half;
-                v = seg.velocity + a * t_dec_local;
-            }
         } else {
-            // Default linear
              v = (seg.distance / seg.duration);
              a = 0;
         }
 
-        // Integrate Position
-        if (i > 0) {
-            currentPos += v * realDt;
-        }
+        if (i > 0) currentPos += v * realDt;
 
-        // Torque Estimation: T = J*a + ExtForce (payload) + Friction (simple damping c*v)
         const damping = 0.01;
         const torque = (totalInertia * a) + seg.payload + (damping * v);
 
@@ -197,7 +159,6 @@ const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, tota
             torque: torque,
             motorVel: v * motorRatio
         });
-
         t_local += realDt;
     }
     currentT += seg.duration;
@@ -206,12 +167,113 @@ const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, tota
   return points;
 };
 
+// Process Raw CSV Data
+const processImportedData = (rawData: {t: number, pos: number}[], motorRatio: number, totalInertia: number): TimePoint[] => {
+    if (rawData.length === 0) return [];
+    
+    // Sort by time just in case
+    rawData.sort((a, b) => a.t - b.t);
+
+    const points: TimePoint[] = [];
+    
+    for (let i = 0; i < rawData.length; i++) {
+        const curr = rawData[i];
+        const prev = i > 0 ? rawData[i-1] : null;
+        const next = i < rawData.length - 1 ? rawData[i+1] : null;
+
+        let v = 0;
+        let a = 0;
+        let j = 0;
+
+        // Calculate Velocity (finite difference)
+        if (prev) {
+            const dt = curr.t - prev.t;
+            if (dt > 0) v = (curr.pos - prev.pos) / dt;
+        } else if (next) {
+            // Start point approximation
+            const dt = next.t - curr.t;
+            if (dt > 0) v = (next.pos - curr.pos) / dt;
+        }
+
+        // Calculate Accel
+        // We need previous velocity for this. 
+        // For i=0, v=initial. For i>0, we just calculated v.
+        // To get a smooth accel, better to calculate all Vs first, then all As.
+    }
+
+    // Two-pass approach for derivatives
+    const tempV: number[] = new Array(rawData.length).fill(0);
+    const tempA: number[] = new Array(rawData.length).fill(0);
+    const tempJ: number[] = new Array(rawData.length).fill(0);
+
+    // Pass 1: Velocity
+    for (let i = 0; i < rawData.length; i++) {
+        if (i === 0) {
+           if (rawData.length > 1) tempV[i] = (rawData[1].pos - rawData[0].pos) / (rawData[1].t - rawData[0].t);
+        } else if (i === rawData.length - 1) {
+           tempV[i] = (rawData[i].pos - rawData[i-1].pos) / (rawData[i].t - rawData[i-1].t);
+        } else {
+           // Central difference
+           tempV[i] = (rawData[i+1].pos - rawData[i-1].pos) / (rawData[i+1].t - rawData[i-1].t);
+        }
+    }
+
+    // Pass 2: Acceleration
+    for (let i = 0; i < rawData.length; i++) {
+        if (i === 0) {
+           if (rawData.length > 1) tempA[i] = (tempV[1] - tempV[0]) / (rawData[1].t - rawData[0].t);
+        } else if (i === rawData.length - 1) {
+           tempA[i] = (tempV[i] - tempV[i-1]) / (rawData[i].t - rawData[i-1].t);
+        } else {
+           tempA[i] = (tempV[i+1] - tempV[i-1]) / (rawData[i+1].t - rawData[i-1].t);
+        }
+    }
+
+    // Pass 3: Jerk
+    for (let i = 0; i < rawData.length; i++) {
+        if (i === 0) {
+           if (rawData.length > 1) tempJ[i] = (tempA[1] - tempA[0]) / (rawData[1].t - rawData[0].t);
+        } else if (i === rawData.length - 1) {
+           tempJ[i] = (tempA[i] - tempA[i-1]) / (rawData[i].t - rawData[i-1].t);
+        } else {
+           tempJ[i] = (tempA[i+1] - tempA[i-1]) / (rawData[i+1].t - rawData[i-1].t);
+        }
+    }
+
+    // Final Assembly
+    for (let i = 0; i < rawData.length; i++) {
+        const t = rawData[i].t;
+        const pos = rawData[i].pos;
+        const v = tempV[i];
+        const a = tempA[i];
+        const j = tempJ[i];
+        
+        const damping = 0.01;
+        const torque = (totalInertia * a) + (damping * v); // Assuming 0 external payload for import, or add field
+
+        points.push({ t, pos, vel: v, acc: a, jerk: j, torque, motorVel: v * motorRatio });
+    }
+
+    return points;
+};
+
 
 export const ProfileEditor: React.FC = () => {
+  // Mode: Sequence Editor vs CSV Import
+  const [mode, setMode] = useState<'sequence' | 'import'>('sequence');
+
+  // Sequence Data
   const [segments, setSegments] = useState<MotionSegment[]>(DEFAULT_SEGMENTS);
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_SEGMENTS[0].id);
-  const [cursorTime, setCursorTime] = useState<number | null>(null);
   
+  // Import Data
+  const [importedData, setImportedData] = useState<TimePoint[]>([]);
+  const [importFileName, setImportFileName] = useState<string>('');
+
+  // Common UI State
+  const [cursorTime, setCursorTime] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
   // Chart Trace Config
   const [traces, setTraces] = useState<TraceConfig[]>([
     { key: 'pos', label: 'Position', color: '#10b981', unit: 'deg', active: true },
@@ -224,13 +286,12 @@ export const ProfileEditor: React.FC = () => {
 
   const [motorRatio, setMotorRatio] = useState<number>(10);
 
-  // --- Logic ---
+  // --- Sequence Logic ---
 
   const solveSegment = (seg: MotionSegment, startV: number): MotionSegment => {
     let { duration, distance, velocity, type, calcTarget } = seg;
     let accel = 0, decel = 0, jerk = 0;
     let endV = 0;
-
     const safeDur = duration === 0 ? 0.0001 : duration;
 
     if (type === 'Dwell/Traverse') {
@@ -262,7 +323,6 @@ export const ProfileEditor: React.FC = () => {
         decel = 0; 
     }
     else {
-        // Point-to-Point
         let shapeFactor = 1.0; 
         if (type === 'Trapezoid') shapeFactor = 1.5;
         if (type === 'Triangle') shapeFactor = 2.0;
@@ -290,18 +350,7 @@ export const ProfileEditor: React.FC = () => {
         }
     }
 
-    return {
-        ...seg,
-        calcTarget,
-        duration,
-        distance,
-        velocity,
-        startVelocity: startV,
-        endVelocity: endV,
-        accel,
-        decel,
-        jerk
-    };
+    return { ...seg, calcTarget, duration, distance, velocity, startVelocity: startV, endVelocity: endV, accel, decel, jerk };
   };
 
   const recalculateChain = (currentSegments: MotionSegment[]): MotionSegment[] => {
@@ -356,6 +405,40 @@ export const ProfileEditor: React.FC = () => {
     if (selectedId === id) setSelectedId(newSegs[0].id);
   };
 
+  // --- Import Logic ---
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setImportFileName(file.name);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          const text = event.target?.result as string;
+          // Simple parsing: split by line, split by comma. Expected: time, pos
+          const lines = text.split('\n');
+          const raw: {t: number, pos: number}[] = [];
+          
+          lines.forEach(line => {
+              const parts = line.trim().split(/[,;|\t]+/);
+              if (parts.length >= 2) {
+                  const t = parseFloat(parts[0]);
+                  const pos = parseFloat(parts[1]);
+                  if (!isNaN(t) && !isNaN(pos)) {
+                      raw.push({t, pos});
+                  }
+              }
+          });
+
+          // Process
+          const processed = processImportedData(raw, motorRatio, 0.05);
+          setImportedData(processed);
+      };
+      reader.readAsText(file);
+  };
+
+  // --- Chart Data & Analysis ---
+
   const toggleTrace = (key: TraceType) => {
       setTraces(prev => prev.map(t => t.key === key ? { ...t, active: !t.active } : t));
   };
@@ -370,17 +453,20 @@ export const ProfileEditor: React.FC = () => {
       });
   }, [segments]);
 
-  // --- Chart Data & Analysis ---
-
   const timeSeries = useMemo(() => {
+      if (mode === 'import') return importedData;
       return simulateMotion(segments, motorRatio);
-  }, [segments, motorRatio]);
+  }, [segments, motorRatio, mode, importedData]);
 
   const analysis = useMemo(() => {
      const res: Record<TraceType, { min: number, max: number, avg: number, rms: number }> = {} as any;
      
      traces.forEach(t => {
          const values = timeSeries.map(p => p[t.key]);
+         if (values.length === 0) {
+             res[t.key] = { min:0, max:0, avg:0, rms:0 };
+             return;
+         }
          const min = Math.min(...values);
          const max = Math.max(...values);
          const sum = values.reduce((a, b) => a + b, 0);
@@ -412,7 +498,6 @@ export const ProfileEditor: React.FC = () => {
 
   const scaleX = (t: number) => padX + (t / (totalTime || 1)) * (svgW - 2 * padX);
   
-  // Independent Y scaling for each active trace to fit in the view
   const getScaleYLocal = (key: TraceType) => {
       const stats = analysis[key];
       const range = Math.max(0.001, stats.max - stats.min);
@@ -427,28 +512,33 @@ export const ProfileEditor: React.FC = () => {
   };
 
   const getPath = (key: TraceType) => {
+      if (timeSeries.length === 0) return '';
       const scaleYLocal = getScaleYLocal(key);
       return timeSeries.map((p, i) => 
         `${i === 0 ? 'M' : 'L'} ${scaleX(p.t).toFixed(1)},${scaleYLocal(p[key]).toFixed(1)}`
       ).join(' ');
   };
 
+  // Improved Cursor Handler using SVG Matrix
   const handleGraphMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      // Correctly map screen X to SVG ViewBox X
-      // preserveAspectRatio="none" implies X and Y are scaled independently.
-      const scaleXFactor = svgW / rect.width;
-      const svgX = (e.clientX - rect.left) * scaleXFactor;
+      const svg = svgRef.current;
+      if (!svg) return;
+
+      // Create an SVGPoint for transformation
+      const point = svg.createSVGPoint();
+      point.x = e.clientX;
+      point.y = e.clientY;
+
+      // Transform screen coordinates to SVG coordinates
+      const svgP = point.matrixTransform(svg.getScreenCTM()?.inverse());
       
-      // Inverse of scaleX function using SVG coordinates
-      // svgX = padX + (t / totalTime) * plotWidth
-      // t = ((svgX - padX) / plotWidth) * totalTime
+      // Calculate Time from SVG X
+      // svgP.x = padX + (t / totalTime) * plotWidth
+      // t = ((svgP.x - padX) / plotWidth) * totalTime
       
       const plotWidth = svgW - 2 * padX;
-      const relativeX = svgX - padX;
-      let t = (relativeX / plotWidth) * (totalTime || 1);
+      let t = ((svgP.x - padX) / plotWidth) * (totalTime || 1);
       
-      // Clamp
       t = Math.max(0, Math.min(totalTime, t));
       setCursorTime(t);
   };
@@ -460,154 +550,220 @@ export const ProfileEditor: React.FC = () => {
   return (
     <div className="flex h-full border border-gray-300 bg-white font-sans text-xs">
       
-      {/* LEFT COLUMN: Grid & Detail Editor */}
+      {/* LEFT COLUMN: Editor (Dual Mode) */}
       <div className="w-[480px] flex flex-col border-r border-gray-300 shrink-0">
         
-        {/* 1. TOP: Segment Grid */}
-        <div className="h-[40%] flex flex-col bg-white">
-           <div className="h-7 bg-gray-100 border-b border-gray-300 flex items-center px-2 space-x-2 shrink-0">
-             <button onClick={addSegment} className="flex items-center px-2 py-0.5 bg-white border border-gray-300 rounded shadow-sm hover:bg-blue-50 text-xs text-gray-700">
-                <Plus size={12} className="mr-1 text-green-600"/> Add
+        {/* Mode Toggles */}
+        <div className="h-8 bg-gray-100 border-b border-gray-300 flex items-center px-1 shrink-0">
+             <button 
+                onClick={() => setMode('sequence')}
+                className={`flex-1 flex items-center justify-center h-6 text-[10px] font-bold uppercase rounded-sm mr-1 ${mode === 'sequence' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:bg-gray-200'}`}
+             >
+                Sequence Editor
              </button>
-             <div className="w-px h-4 bg-gray-300 mx-1"></div>
-             <span className="font-bold text-gray-500 uppercase tracking-wider text-[10px]">Sequence</span>
-           </div>
-           
-           <div className="grid grid-cols-[24px_110px_60px_70px_1fr_24px] bg-gray-200 border-b border-gray-300 font-semibold text-gray-700 py-1 shrink-0">
-               <div className="text-center">#</div>
-               <div className="px-1 border-l border-gray-300">Type</div>
-               <div className="px-1 border-l border-gray-300 text-right">Time</div>
-               <div className="px-1 border-l border-gray-300 text-right">End Pos</div>
-               <div className="px-1 border-l border-gray-300 text-right">V End</div>
-               <div></div>
-           </div>
-
-           <div className="flex-1 overflow-y-auto bg-white">
-               {gridData.map((seg, idx) => (
-                   <div 
-                      key={seg.id}
-                      onClick={() => setSelectedId(seg.id)}
-                      className={`grid grid-cols-[24px_110px_60px_70px_1fr_24px] border-b border-gray-100 items-center cursor-pointer hover:bg-blue-50
-                        ${selectedId === seg.id ? 'bg-blue-100' : ''}
-                      `}
-                   >
-                       <div className="flex items-center justify-center text-gray-500 h-full border-r border-gray-200 bg-gray-50">
-                          {selectedId === seg.id ? <ChevronRight size={12} className="text-black"/> : (idx + 1)}
-                       </div>
-                       <div className="p-0.5 border-r border-gray-200">
-                           <select 
-                             className="w-full bg-transparent outline-none focus:bg-white text-xs"
-                             value={seg.type}
-                             onChange={(e) => updateSegment(seg.id, { type: e.target.value as SegmentType })}
-                           >
-                              <option>Accel/Decel</option>
-                              <option>Trapezoid</option>
-                              <option>Triangle</option>
-                              <option>Dwell/Traverse</option>
-                              <option>S-Curve</option>
-                              <option>Sine</option>
-                           </select>
-                       </div>
-                       <div className="p-1 text-right border-r border-gray-200 truncate">{seg.duration.toFixed(3)}</div>
-                       <div className="p-1 text-right border-r border-gray-200 truncate">{seg.absPos.toFixed(1)}</div>
-                       <div className="p-1 text-right border-r border-gray-200 truncate">{seg.endVelocity.toFixed(1)}</div>
-                       
-                       <div className="flex items-center justify-center">
-                           <button onClick={(e) => { e.stopPropagation(); removeSegment(seg.id); }} className="text-gray-400 hover:text-red-500">
-                               <Trash2 size={12} />
-                           </button>
-                       </div>
-                   </div>
-               ))}
-           </div>
+             <button 
+                onClick={() => setMode('import')}
+                className={`flex-1 flex items-center justify-center h-6 text-[10px] font-bold uppercase rounded-sm ${mode === 'import' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:bg-gray-200'}`}
+             >
+                Import CSV Profile
+             </button>
         </div>
 
-        {/* 2. BOTTOM: Detail Panel */}
-        <div className="flex-1 bg-gray-100 border-t border-gray-300 p-4 shadow-inner overflow-y-auto">
-           {selectedSegment && (
-             <div className="flex gap-6">
-                <div className="flex-1 min-w-[160px]">
-                   <DetailRow 
-                      label="Duration" 
-                      locked={selectedSegment.calcTarget !== 'duration'}
-                      onToggleLock={() => handleLockClick(selectedSegment, 'duration')}
-                   >
-                      <UnitInput 
-                         type="time"
-                         value={selectedSegment.duration}
-                         onChange={(v) => updateSegment(selectedSegment.id, { duration: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'duration' ? 'velocity' : selectedSegment.calcTarget })}
-                         readOnly={selectedSegment.calcTarget === 'duration'}
-                      />
-                   </DetailRow>
-
-                   <div className="mb-3">
-                      <div className="flex items-center justify-between mb-1">
-                          <label className="text-xs text-gray-700 font-medium">Distance</label>
-                          <select 
-                             className="text-[10px] bg-transparent border-none outline-none text-gray-500 cursor-pointer hover:text-blue-600"
-                             value={selectedSegment.distUnitType}
-                             onChange={(e) => updateSegment(selectedSegment.id, { distUnitType: e.target.value as any })}
-                          >
-                             <option value="angle">Rotary (deg, rad)</option>
-                             <option value="length">Linear (mm, m)</option>
-                          </select>
-                      </div>
-                      <div className="flex items-center">
-                          <LockButton 
-                             locked={selectedSegment.calcTarget !== 'distance'} 
-                             onClick={() => handleLockClick(selectedSegment, 'distance')} 
-                          />
-                          <div className={`flex-1 ${selectedSegment.calcTarget === 'distance' ? 'opacity-80' : ''}`}>
-                             <UnitInput 
-                                type={selectedSegment.distUnitType}
-                                value={selectedSegment.distance}
-                                onChange={(v) => updateSegment(selectedSegment.id, { distance: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'distance' ? 'velocity' : selectedSegment.calcTarget })}
-                                readOnly={selectedSegment.calcTarget === 'distance'}
-                             />
-                          </div>
-                      </div>
-                   </div>
-
-                   <DetailRow 
-                      label="Velocity" 
-                      locked={selectedSegment.calcTarget !== 'velocity'}
-                      onToggleLock={() => handleLockClick(selectedSegment, 'velocity')}
-                      disabledLock={selectedSegment.type === 'Dwell/Traverse'}
-                   >
-                      <UnitInput 
-                         type="speed"
-                         value={selectedSegment.velocity}
-                         onChange={(v) => updateSegment(selectedSegment.id, { velocity: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'velocity' ? 'distance' : selectedSegment.calcTarget })}
-                         readOnly={selectedSegment.calcTarget === 'velocity' || selectedSegment.type === 'Dwell/Traverse'}
-                      />
-                   </DetailRow>
-
-                   <DetailRow label="Payload/Force" locked={true} onToggleLock={()=>{}} disabledLock={true}>
-                      <UnitInput 
-                         type="torque"
-                         value={selectedSegment.payload}
-                         onChange={(v) => updateSegment(selectedSegment.id, { payload: parseFloat(v) })}
-                      />
-                   </DetailRow>
+        {/* MODE: SEQUENCE EDITOR */}
+        {mode === 'sequence' && (
+            <>
+                {/* Grid */}
+                <div className="h-[40%] flex flex-col bg-white">
+                <div className="h-7 bg-gray-50 border-b border-gray-300 flex items-center px-2 space-x-2 shrink-0">
+                    <button onClick={addSegment} className="flex items-center px-2 py-0.5 bg-white border border-gray-300 rounded shadow-sm hover:bg-blue-50 text-xs text-gray-700">
+                        <Plus size={12} className="mr-1 text-green-600"/> Add Step
+                    </button>
+                </div>
+                
+                <div className="grid grid-cols-[24px_110px_60px_70px_1fr_24px] bg-gray-200 border-b border-gray-300 font-semibold text-gray-700 py-1 shrink-0">
+                    <div className="text-center">#</div>
+                    <div className="px-1 border-l border-gray-300">Type</div>
+                    <div className="px-1 border-l border-gray-300 text-right">Time</div>
+                    <div className="px-1 border-l border-gray-300 text-right">End Pos</div>
+                    <div className="px-1 border-l border-gray-300 text-right">V End</div>
+                    <div></div>
                 </div>
 
-                <div className="flex-1 min-w-[180px] bg-gray-50 border border-gray-200 p-2 rounded-sm h-fit">
-                   <div className="text-[10px] font-bold text-gray-400 uppercase mb-2 text-right">Calculated Results</div>
-                   <ReadOnlyRow label="Accel.">
-                      <UnitInput type="angle" value={selectedSegment.accel} onChange={()=>{}} readOnly /> 
-                   </ReadOnlyRow>
-                   <ReadOnlyRow label="Decel.">
-                      <UnitInput type="angle" value={selectedSegment.decel} onChange={()=>{}} readOnly />
-                   </ReadOnlyRow>
-                   <div className="mt-4 border-t border-gray-200 pt-2">
-                       <ReadOnlyRow label="Jerk">
-                          <UnitInput type="angle" value={selectedSegment.jerk} onChange={()=>{}} readOnly />
-                       </ReadOnlyRow>
-                   </div>
+                <div className="flex-1 overflow-y-auto bg-white">
+                    {gridData.map((seg, idx) => (
+                        <div 
+                            key={seg.id}
+                            onClick={() => setSelectedId(seg.id)}
+                            className={`grid grid-cols-[24px_110px_60px_70px_1fr_24px] border-b border-gray-100 items-center cursor-pointer hover:bg-blue-50
+                                ${selectedId === seg.id ? 'bg-blue-100' : ''}
+                            `}
+                        >
+                            <div className="flex items-center justify-center text-gray-500 h-full border-r border-gray-200 bg-gray-50">
+                                {selectedId === seg.id ? <ChevronRight size={12} className="text-black"/> : (idx + 1)}
+                            </div>
+                            <div className="p-0.5 border-r border-gray-200">
+                                <select 
+                                    className="w-full bg-transparent outline-none focus:bg-white text-xs"
+                                    value={seg.type}
+                                    onChange={(e) => updateSegment(seg.id, { type: e.target.value as SegmentType })}
+                                >
+                                    <option>Accel/Decel</option>
+                                    <option>Trapezoid</option>
+                                    <option>Triangle</option>
+                                    <option>Dwell/Traverse</option>
+                                    <option>S-Curve</option>
+                                    <option>Sine</option>
+                                </select>
+                            </div>
+                            <div className="p-1 text-right border-r border-gray-200 truncate">{seg.duration.toFixed(3)}</div>
+                            <div className="p-1 text-right border-r border-gray-200 truncate">{seg.absPos.toFixed(1)}</div>
+                            <div className="p-1 text-right border-r border-gray-200 truncate">{seg.endVelocity.toFixed(1)}</div>
+                            
+                            <div className="flex items-center justify-center">
+                                <button onClick={(e) => { e.stopPropagation(); removeSegment(seg.id); }} className="text-gray-400 hover:text-red-500">
+                                    <Trash2 size={12} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
                 </div>
-             </div>
-           )}
-        </div>
+                </div>
+
+                {/* Details */}
+                <div className="flex-1 bg-gray-100 border-t border-gray-300 p-4 shadow-inner overflow-y-auto">
+                {selectedSegment && (
+                    <div className="flex gap-6">
+                        <div className="flex-1 min-w-[160px]">
+                        <DetailRow 
+                            label="Duration" 
+                            locked={selectedSegment.calcTarget !== 'duration'}
+                            onToggleLock={() => handleLockClick(selectedSegment, 'duration')}
+                        >
+                            <UnitInput 
+                                type="time"
+                                value={selectedSegment.duration}
+                                onChange={(v) => updateSegment(selectedSegment.id, { duration: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'duration' ? 'velocity' : selectedSegment.calcTarget })}
+                                readOnly={selectedSegment.calcTarget === 'duration'}
+                            />
+                        </DetailRow>
+
+                        <div className="mb-3">
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="text-xs text-gray-700 font-medium">Distance</label>
+                                <select 
+                                    className="text-[10px] bg-transparent border-none outline-none text-gray-500 cursor-pointer hover:text-blue-600"
+                                    value={selectedSegment.distUnitType}
+                                    onChange={(e) => updateSegment(selectedSegment.id, { distUnitType: e.target.value as any })}
+                                >
+                                    <option value="angle">Rotary (deg, rad)</option>
+                                    <option value="length">Linear (mm, m)</option>
+                                </select>
+                            </div>
+                            <div className="flex items-center">
+                                <LockButton 
+                                    locked={selectedSegment.calcTarget !== 'distance'} 
+                                    onClick={() => handleLockClick(selectedSegment, 'distance')} 
+                                />
+                                <div className={`flex-1 ${selectedSegment.calcTarget === 'distance' ? 'opacity-80' : ''}`}>
+                                    <UnitInput 
+                                        type={selectedSegment.distUnitType}
+                                        value={selectedSegment.distance}
+                                        onChange={(v) => updateSegment(selectedSegment.id, { distance: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'distance' ? 'velocity' : selectedSegment.calcTarget })}
+                                        readOnly={selectedSegment.calcTarget === 'distance'}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <DetailRow 
+                            label="Velocity" 
+                            locked={selectedSegment.calcTarget !== 'velocity'}
+                            onToggleLock={() => handleLockClick(selectedSegment, 'velocity')}
+                            disabledLock={selectedSegment.type === 'Dwell/Traverse'}
+                        >
+                            <UnitInput 
+                                type="speed"
+                                value={selectedSegment.velocity}
+                                onChange={(v) => updateSegment(selectedSegment.id, { velocity: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'velocity' ? 'distance' : selectedSegment.calcTarget })}
+                                readOnly={selectedSegment.calcTarget === 'velocity' || selectedSegment.type === 'Dwell/Traverse'}
+                            />
+                        </DetailRow>
+
+                        <DetailRow label="Payload/Force" locked={true} onToggleLock={()=>{}} disabledLock={true}>
+                            <UnitInput 
+                                type="torque"
+                                value={selectedSegment.payload}
+                                onChange={(v) => updateSegment(selectedSegment.id, { payload: parseFloat(v) })}
+                            />
+                        </DetailRow>
+                        </div>
+
+                        <div className="flex-1 min-w-[180px] bg-gray-50 border border-gray-200 p-2 rounded-sm h-fit">
+                        <div className="text-[10px] font-bold text-gray-400 uppercase mb-2 text-right">Calculated Results</div>
+                        <ReadOnlyRow label="Accel.">
+                            <UnitInput type="angle" value={selectedSegment.accel} onChange={()=>{}} readOnly /> 
+                        </ReadOnlyRow>
+                        <ReadOnlyRow label="Decel.">
+                            <UnitInput type="angle" value={selectedSegment.decel} onChange={()=>{}} readOnly />
+                        </ReadOnlyRow>
+                        <div className="mt-4 border-t border-gray-200 pt-2">
+                            <ReadOnlyRow label="Jerk">
+                                <UnitInput type="angle" value={selectedSegment.jerk} onChange={()=>{}} readOnly />
+                            </ReadOnlyRow>
+                        </div>
+                        </div>
+                    </div>
+                )}
+                </div>
+            </>
+        )}
+
+        {/* MODE: CSV IMPORT */}
+        {mode === 'import' && (
+            <div className="flex-1 bg-gray-50 flex flex-col p-6">
+                <div className="relative bg-white border-2 border-dashed border-gray-300 rounded-lg p-8 flex flex-col items-center justify-center mb-6 hover:bg-blue-50 transition-colors">
+                    <Upload size={32} className="text-gray-400 mb-2"/>
+                    <span className="text-sm font-semibold text-gray-600">Click to Upload CSV</span>
+                    <span className="text-xs text-gray-400 mt-1">Format: Time, Position</span>
+                    <input 
+                        type="file" 
+                        accept=".csv,.txt"
+                        className="absolute opacity-0 w-full h-full cursor-pointer inset-0"
+                        onChange={handleFileUpload}
+                    />
+                </div>
+
+                {importedData.length > 0 ? (
+                    <div className="bg-white border border-gray-200 rounded shadow-sm p-4">
+                        <div className="flex items-center space-x-2 mb-4 border-b border-gray-100 pb-2">
+                            <FileText size={16} className="text-blue-600"/>
+                            <span className="font-bold text-gray-700">{importFileName}</span>
+                        </div>
+                        <div className="space-y-2 text-xs text-gray-600">
+                             <div className="flex justify-between">
+                                 <span>Data Points:</span>
+                                 <span className="font-mono">{importedData.length}</span>
+                             </div>
+                             <div className="flex justify-between">
+                                 <span>Total Duration:</span>
+                                 <span className="font-mono">{totalTime.toFixed(3)} s</span>
+                             </div>
+                             <div className="flex justify-between">
+                                 <span>Max Position:</span>
+                                 <span className="font-mono">{analysis.pos.max.toFixed(2)}</span>
+                             </div>
+                        </div>
+                        <div className="mt-4 p-2 bg-yellow-50 text-yellow-800 text-[10px] border border-yellow-100 rounded">
+                           Note: Velocity, Acceleration, and Jerk are numerically derived from Time/Position data points.
+                        </div>
+                    </div>
+                ) : (
+                    <div className="text-center text-gray-400 text-xs italic">
+                        No data loaded.
+                    </div>
+                )}
+            </div>
+        )}
       </div>
 
       {/* RIGHT COLUMN: Chart & Analyzer */}
@@ -648,6 +804,7 @@ export const ProfileEditor: React.FC = () => {
             </div>
 
             <svg 
+                ref={svgRef}
                 width="100%" 
                 height="100%" 
                 viewBox={`0 0 ${svgW} ${svgH}`} 
