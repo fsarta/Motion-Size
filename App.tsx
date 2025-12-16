@@ -125,7 +125,10 @@ const CamTableManagerModal = ({ isOpen, onClose, camTables, onAdd, onDelete }: {
 const App = () => {
   const [data, setData] = useState<TreeNode[]>(initialData);
   const [selectedNodeId, setSelectedNodeId] = useState<string>('root');
-  const [clipboard, setClipboard] = useState<TreeNode | null>(null);
+  
+  // Clipboard state
+  const [clipboard, setClipboard] = useState<{ node: TreeNode, isCut: boolean } | null>(null);
+
   const [camTables, setCamTables] = useState<CamTable[]>([
     { id: 'Cam_1', name: 'RotaryShear_3' },
     { id: 'Cam_2', name: 'FlyingSaw_1' }
@@ -239,11 +242,8 @@ const App = () => {
     }
   };
 
-  const confirmDelete = () => {
-    if (!nodeToDelete) return;
-    const id = nodeToDelete.id;
-
-    const deleteRecursive = (nodes: TreeNode[]): TreeNode[] => {
+  const deleteNodeById = (id: string) => {
+      const deleteRecursive = (nodes: TreeNode[]): TreeNode[] => {
       return nodes
         .filter(node => node.id !== id)
         .map(node => ({
@@ -251,8 +251,13 @@ const App = () => {
           children: node.children ? deleteRecursive(node.children) : undefined
         }));
     };
-    setData(deleteRecursive(data));
+    setData(prev => deleteRecursive(prev));
     if (selectedNodeId === id) setSelectedNodeId('root');
+  }
+
+  const confirmDelete = () => {
+    if (!nodeToDelete) return;
+    deleteNodeById(nodeToDelete.id);
     setNodeToDelete(null);
   };
 
@@ -263,42 +268,60 @@ const App = () => {
   const handleCopyNode = (id: string) => {
     const node = findNode(data, id);
     if (node) {
-      // Deep clone to avoid reference issues
       const clone = JSON.parse(JSON.stringify(node));
-      setClipboard(clone);
+      setClipboard({ node: clone, isCut: false });
     }
   };
+
+  const handleCutNode = (id: string) => {
+    const node = findNode(data, id);
+    if (node) {
+        const clone = JSON.parse(JSON.stringify(node));
+        setClipboard({ node: clone, isCut: true });
+    }
+  }
 
   const handlePasteNode = (targetId: string | null) => {
     if (!clipboard) return;
 
-    const newNode = regenerateIds(clipboard);
+    // Determine the node to insert. If it was a 'Cut', we reuse it (with new ID to be safe or original ID?), 
+    // actually if we move, we might want to keep ID or regenerate. 
+    // Standard clipboard practice: Paste creates new entity. 
+    // BUT if it's "Move", we are essentially re-parenting.
+    
+    // Let's stick to regenerate for safety to avoid ID collisions if user pastes multiple times (even though cut implies once).
+    // If it is cut, we delete the original AFTER successful paste.
+    
+    const newNode = regenerateIds(clipboard.node);
+    const nodeToPasteType = clipboard.node.type;
 
-    // Ensure unique name on paste if it's an axis
-    if (clipboard.type === 'axis') {
-         // This is tricky because we don't know the parent until we find the target group.
-         // For now, we'll append "Copy" to ensure basic uniqueness visualy.
-         // A stricter check would happen if we scanned the target group first.
+    // Ensure unique name on paste if it's an axis and we are copying
+    if (nodeToPasteType === 'axis' && !clipboard.isCut) {
          newNode.label = newNode.label + " (Copy)";
          if (newNode.parameters) newNode.parameters.axisName = newNode.label;
     }
 
+    let success = false;
+
     // Scenario 1: Pasting a Group. It always goes to the Root level.
-    if (clipboard.type === 'group') {
-      newNode.label = `${newNode.label} (Copy)`;
+    if (nodeToPasteType === 'group') {
+      if (!clipboard.isCut) newNode.label = `${newNode.label} (Copy)`;
       setData(prev => [...prev, newNode]);
-      return;
+      success = true;
     }
 
     // Scenario 2: Pasting an Axis. Must act on a target Group.
-    if (clipboard.type === 'axis' && targetId) {
+    if (nodeToPasteType === 'axis' && targetId) {
        // Find the target group
+       // We need to use a temp variable to update state once
+       let updatedData = [...data];
+       
        const updateRecursive = (nodes: TreeNode[]): TreeNode[] => {
          return nodes.map(node => {
            // If target is the group, push to its children
            if (node.id === targetId && node.type === 'group') {
              
-             // Extra check: ensure uniqueness within this target group
+             // Check for name uniqueness in target group
              let uniqueLabel = newNode.label;
              let counter = 1;
              while (node.children?.some(c => c.type === 'axis' && c.label === uniqueLabel)) {
@@ -308,21 +331,88 @@ const App = () => {
              newNode.label = uniqueLabel;
              if (newNode.parameters) newNode.parameters.axisName = uniqueLabel;
 
+             success = true;
              return {
                ...node,
                children: [...(node.children || []), newNode],
                expanded: true
              };
            }
-           // If children exist, recurse
            if (node.children) {
              return { ...node, children: updateRecursive(node.children) };
            }
            return node;
          });
        };
-       setData(updateRecursive(data));
+       updatedData = updateRecursive(updatedData);
+       if (success) setData(updatedData);
     }
+
+    // If Paste was successful and it was a Cut operation, delete the original
+    if (success && clipboard.isCut) {
+        deleteNodeById(clipboard.node.id);
+        setClipboard(null); // Clear clipboard after move
+    }
+  };
+
+  const handleMoveNode = (draggedId: string, targetGroupId: string) => {
+      // 1. Find Dragged Node
+      const draggedNode = findNode(data, draggedId);
+      if (!draggedNode) return;
+
+      // 2. Validate move (cannot move group into itself, etc - but here we only drag axes to groups)
+      if (draggedNode.type !== 'axis') return; 
+
+      // 3. Clone and Regenerate (or keep ID? For move, usually keep ID unless conflict)
+      // Let's regenerate ID to avoid any ghost conflict in React keys during transition
+      const nodeToMove = JSON.parse(JSON.stringify(draggedNode));
+      const newNode = regenerateIds(nodeToMove);
+      // Keep name same
+
+      // 4. Insert into Target
+      let success = false;
+      const dataWithInsert = data.map(function recurse(node): TreeNode {
+          if (node.id === targetGroupId && node.type === 'group') {
+              // Check name uniqueness
+              let uniqueLabel = newNode.label;
+              let counter = 1;
+              while (node.children?.some(c => c.type === 'axis' && c.label === uniqueLabel)) {
+                  uniqueLabel = `${newNode.label} (${counter})`;
+                  counter++;
+              }
+              newNode.label = uniqueLabel;
+              if (newNode.parameters) newNode.parameters.axisName = uniqueLabel;
+              
+              success = true;
+              return {
+                  ...node,
+                  children: [...(node.children || []), newNode],
+                  expanded: true
+              }
+          }
+          if (node.children) {
+              return { ...node, children: node.children.map(recurse) };
+          }
+          return node;
+      });
+
+      // 5. If inserted, remove original
+      if (success) {
+          // Remove original
+           const finalData = dataWithInsert.map(function recurseDel(node): TreeNode {
+             // We need to filter out the OLD id
+             if (node.children) {
+                 return {
+                     ...node,
+                     children: node.children.filter(c => c.id !== draggedId).map(recurseDel)
+                 }
+             }
+             return node;
+           });
+           
+           setData(finalData);
+           setSelectedNodeId(newNode.id); // Select the moved node
+      }
   };
 
   const addAxis = () => {
@@ -505,8 +595,10 @@ const App = () => {
           onAddGroup={addGroup}
           onDeleteNode={handleRequestDelete}
           onCopyNode={handleCopyNode}
+          onCutNode={handleCutNode}
           onPasteNode={handlePasteNode}
-          clipboard={clipboard}
+          onMoveNode={handleMoveNode}
+          clipboard={clipboard ? clipboard.node : null}
         />
         
         {/* Main Content Area */}

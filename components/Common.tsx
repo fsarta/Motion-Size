@@ -23,7 +23,8 @@ export const Select = ({ value, options, onChange, className }: { value?: string
   <select 
     value={value} 
     onChange={onChange}
-    className={`w-full text-xs border border-gray-300 bg-white px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${className || ''}`}
+    className={`w-full text-xs border border-gray-300 bg-white text-gray-900 px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${className || ''}`}
+    style={{ backgroundColor: '#ffffff', color: '#111827' }}
   >
     {options.map(o => <option key={o} value={o}>{o}</option>)}
   </select>
@@ -91,7 +92,12 @@ export const UnitInput = ({
           onBlur={handleBlur}
           onFocus={handleFocus}
           readOnly={readOnly}
-          className={`w-full min-w-0 text-right text-xs border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-600' : 'bg-white'}`} 
+          // Explicitly forcing colors to avoid any black background issues
+          className={`w-full min-w-0 text-right text-xs border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500' : 'bg-white text-gray-900'}`} 
+          style={{ 
+             backgroundColor: readOnly ? '#f3f4f6' : '#ffffff', 
+             color: readOnly ? '#6b7280' : '#111827' 
+          }}
         />
         {hasCalculator && (
           <div className="absolute right-0 top-0 bottom-0 flex items-center pr-1 pointer-events-none">

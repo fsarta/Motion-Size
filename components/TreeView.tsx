@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronRight, ChevronDown, Folder, Server, Box, Disc, Activity, Plus, Trash2, Copy, ClipboardPaste } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, Server, Box, Disc, Activity, Plus, Trash2, Copy, ClipboardPaste, Scissors } from 'lucide-react';
 import { TreeNode } from '../types';
 
 interface TreeItemProps {
@@ -9,12 +9,16 @@ interface TreeItemProps {
   onSelect: (id: string) => void;
   selectedId: string;
   onContextMenu: (e: React.MouseEvent, node: TreeNode) => void;
+  onMoveNode: (draggedId: string, targetGroupId: string) => void;
 }
 
-const TreeItem: React.FC<TreeItemProps> = ({ node, level, onToggle, onSelect, selectedId, onContextMenu }) => {
+const TreeItem: React.FC<TreeItemProps> = ({ node, level, onToggle, onSelect, selectedId, onContextMenu, onMoveNode }) => {
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = node.id === selectedId;
   
+  // Drag State
+  const [isDragOver, setIsDragOver] = useState(false);
+
   const getIcon = (type: string) => {
     switch(type) {
       case 'group': return <Server size={14} className="text-gray-600" />;
@@ -25,16 +29,55 @@ const TreeItem: React.FC<TreeItemProps> = ({ node, level, onToggle, onSelect, se
     }
   };
 
+  const handleDragStart = (e: React.DragEvent) => {
+      // Only Axes are draggable in this implementation to prevent mess
+      if (node.type === 'axis') {
+          e.dataTransfer.setData('application/react-dnd-axis-id', node.id);
+          e.dataTransfer.effectAllowed = 'move';
+      } else {
+          e.preventDefault();
+      }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+      // Allow dropping only onto Groups
+      if (node.type === 'group') {
+         e.preventDefault(); // Necessary to allow dropping
+         e.dataTransfer.dropEffect = 'move';
+         setIsDragOver(true);
+      }
+  };
+
+  const handleDragLeave = () => {
+      setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const draggedId = e.dataTransfer.getData('application/react-dnd-axis-id');
+      if (draggedId && node.type === 'group') {
+          // Check if dropping into same group? Logic handled in App
+          onMoveNode(draggedId, node.id);
+      }
+  };
+
   return (
     <div>
       <div 
         className={`flex items-center py-0.5 cursor-pointer border border-transparent text-sm select-none
           ${isSelected ? 'bg-win-select border-win-border' : 'hover:bg-win-hover hover:border-win-border'}
           ${node.id === 'root' && !isSelected ? 'bg-gray-100 font-semibold' : ''}
+          ${isDragOver ? 'outline outline-2 outline-blue-500 bg-blue-50' : ''}
         `}
         style={{ paddingLeft: `${level * 16 + 4}px` }}
         onClick={() => onSelect(node.id)}
         onContextMenu={(e) => onContextMenu(e, node)}
+        draggable={node.type === 'axis'}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         <div 
           className="w-4 h-4 flex items-center justify-center mr-1"
@@ -61,6 +104,7 @@ const TreeItem: React.FC<TreeItemProps> = ({ node, level, onToggle, onSelect, se
               onSelect={onSelect}
               selectedId={selectedId}
               onContextMenu={onContextMenu}
+              onMoveNode={onMoveNode}
             />
           ))}
         </div>
@@ -77,7 +121,9 @@ interface TreeViewProps {
   onAddGroup: () => void;
   onDeleteNode: (id: string) => void;
   onCopyNode: (id: string) => void;
+  onCutNode: (id: string) => void;
   onPasteNode: (targetId: string | null) => void;
+  onMoveNode: (draggedId: string, targetGroupId: string) => void;
   clipboard: TreeNode | null;
 }
 
@@ -89,7 +135,9 @@ export const TreeView: React.FC<TreeViewProps> = ({
   onAddGroup,
   onDeleteNode,
   onCopyNode,
+  onCutNode,
   onPasteNode,
+  onMoveNode,
   clipboard
 }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, node: TreeNode | null } | null>(null);
@@ -136,6 +184,13 @@ export const TreeView: React.FC<TreeViewProps> = ({
     setContextMenu(null);
   };
 
+  const handleCut = () => {
+    if (contextMenu?.node) {
+      onCutNode(contextMenu.node.id);
+    }
+    setContextMenu(null);
+  }
+
   const handlePaste = () => {
     const targetId = contextMenu?.node ? contextMenu.node.id : null;
     onPasteNode(targetId);
@@ -172,6 +227,7 @@ export const TreeView: React.FC<TreeViewProps> = ({
             onSelect={onSelect}
             selectedId={selectedId}
             onContextMenu={handleContextMenu}
+            onMoveNode={onMoveNode}
           />
         ))}
         {/* Empty area click handling for adding groups */}
@@ -197,10 +253,17 @@ export const TreeView: React.FC<TreeViewProps> = ({
                <>
                 <div 
                     className="px-3 py-1 text-xs text-gray-700 hover:bg-blue-100 hover:text-blue-700 cursor-pointer flex items-center"
+                    onClick={handleCut}
+                >
+                    <Scissors size={12} className="mr-2"/> Cut
+                </div>
+                <div 
+                    className="px-3 py-1 text-xs text-gray-700 hover:bg-blue-100 hover:text-blue-700 cursor-pointer flex items-center"
                     onClick={handleCopy}
                 >
-                    <Copy size={12} className="mr-2"/> Copy {contextMenu.node.type === 'group' ? 'Group' : 'Axis'}
+                    <Copy size={12} className="mr-2"/> Copy
                 </div>
+                <div className="h-px bg-gray-200 my-1"></div>
                 <div 
                     className="px-3 py-1 text-xs text-red-700 hover:bg-red-50 cursor-pointer flex items-center"
                     onClick={handleDelete}
