@@ -808,7 +808,16 @@ const AxisForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => voi
 
 /* --- Main Form Container --- */
 
-export const WorkArea = ({ data, selectedNode, onUpdateNode }: { data: TreeNode[], selectedNode: TreeNode, onUpdateNode: (id: string, params: any) => void }) => {
+export const WorkArea = ({ data, selectedNode, onUpdateNode }: { data: TreeNode[], selectedNode: TreeNode | undefined, onUpdateNode: (id: string, params: any) => void }) => {
+  // Safe check
+  if (!selectedNode) {
+      return (
+        <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden items-center justify-center text-gray-400 text-sm select-none">
+           Select an item from the project tree to configure.
+        </div>
+      );
+  }
+
   // Extract axes from the tree structure for visualizer
   const rootNode = data.find(n => n.id === 'root');
   
