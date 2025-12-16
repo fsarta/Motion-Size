@@ -15,7 +15,9 @@ interface MotionSegment {
   // Basic Kinematics (Stored in Base Units: s, deg/mm, deg/s / mm/s)
   duration: number; 
   distance: number; 
-  velocity: number; 
+  velocity: number; // Target Velocity or Peak Velocity depending on type
+  startVelocity: number; // Calculated from previous segment
+  endVelocity: number;   // Calculated result
   
   // Dynamics (Calculated/Stored)
   accel: number; 
@@ -35,14 +37,16 @@ interface MotionSegment {
 const DEFAULT_SEGMENTS: MotionSegment[] = [
   { 
     id: '1', type: 'Trapezoid', 
-    duration: 1.0, distance: 360, velocity: 540, // 360 deg in 1s trapezoid (1.5 factor) = 540 deg/s peak
+    duration: 1.0, distance: 360, velocity: 540, 
+    startVelocity: 0, endVelocity: 0,
     accel: 1620, decel: 1620, jerk: 0, payload: 0,
-    calcTarget: 'velocity', // Velocity is calculated from Time & Dist
+    calcTarget: 'velocity', 
     distUnitType: 'angle'
   },
   { 
     id: '2', type: 'Dwell/Traverse', 
     duration: 0.5, distance: 0, velocity: 0, 
+    startVelocity: 0, endVelocity: 0,
     accel: 0, decel: 0, jerk: 0, payload: 0,
     calcTarget: 'distance',
     distUnitType: 'angle'
@@ -51,11 +55,11 @@ const DEFAULT_SEGMENTS: MotionSegment[] = [
 
 /* --- Components --- */
 
-const LockButton = ({ locked, onClick }: { locked: boolean, onClick: () => void }) => (
+const LockButton = ({ locked, onClick, disabled }: { locked: boolean, onClick: () => void, disabled?: boolean }) => (
   <button 
-    onClick={onClick}
-    className={`mr-1 focus:outline-none ${locked ? 'text-black' : 'text-gray-400 hover:text-blue-600'}`}
-    title={locked ? "Locked (Input)" : "Unlocked (Calculated)"}
+    onClick={disabled ? undefined : onClick}
+    className={`mr-1 focus:outline-none ${disabled ? 'text-gray-300 cursor-not-allowed' : locked ? 'text-black' : 'text-gray-400 hover:text-blue-600'}`}
+    title={disabled ? "Fixed by Profile Type" : (locked ? "Locked (Input)" : "Unlocked (Calculated)")}
   >
     {locked ? <Lock size={14} fill="currentColor" /> : <Unlock size={14} />}
   </button>
@@ -65,20 +69,22 @@ const DetailRow = ({
   label, 
   children,
   locked,
-  onToggleLock
+  onToggleLock,
+  disabledLock
 }: { 
   label: string, 
   children: React.ReactNode, 
   locked: boolean, 
-  onToggleLock: () => void 
+  onToggleLock: () => void,
+  disabledLock?: boolean
 }) => (
   <div className="mb-3">
     <div className="flex items-center justify-between mb-1">
       <label className="text-xs text-gray-700 font-medium">{label}</label>
     </div>
     <div className="flex items-center">
-      <LockButton locked={locked} onClick={onToggleLock} />
-      <div className={`flex-1 ${!locked ? 'opacity-80' : ''}`}>
+      <LockButton locked={locked} onClick={onToggleLock} disabled={disabledLock} />
+      <div className={`flex-1 ${!locked || disabledLock ? 'opacity-90' : ''}`}>
         {children}
       </div>
     </div>
@@ -100,116 +106,159 @@ export const ProfileEditor: React.FC = () => {
 
   // --- Logic ---
 
-  // Solves the kinematic triangle (d, v, t) and dynamics based on profile type
-  const solveSegment = (seg: MotionSegment): MotionSegment => {
+  // Solves single segment based on inputs and startVelocity
+  const solveSegment = (seg: MotionSegment, startV: number): MotionSegment => {
     let { duration, distance, velocity, type, calcTarget } = seg;
     let accel = 0, decel = 0, jerk = 0;
+    let endV = 0;
 
-    // 1. Solve Kinematics (d, v, t)
-    // Factors depend on profile area. 
-    // Triangle: Vpeak = 2 * Vavg
-    // Trapezoid (1/3): Vpeak = 1.5 * Vavg
-    // Sine/S-Curve: Higher factors (~2 for Sine)
-    // Dwell: V = 0
+    // --- 1. Enforce Constraints based on Type ---
     
-    let shapeFactor = 1.0; // Square (Const Vel)
-    if (type === 'Trapezoid') shapeFactor = 1.5;
-    if (type === 'Triangle') shapeFactor = 2.0;
-    if (type === 'Accel/Decel') shapeFactor = 2.0; // Linear ramp from 0
-    
-    // Avoid division by zero
-    const safeDur = duration === 0 ? 0.0001 : duration;
-    const safeVel = velocity === 0 ? 0.0001 : velocity;
-
-    if (calcTarget === 'velocity') {
-       if (type === 'Dwell/Traverse' && distance === 0) {
-           velocity = 0;
-       } else {
-           const vAvg = distance / safeDur;
-           velocity = vAvg * shapeFactor;
-       }
-    } else if (calcTarget === 'duration') {
-       if (velocity === 0 && distance !== 0) {
-           duration = 0; // Impossible
-       } else {
-           const vAvg = velocity / shapeFactor;
-           duration = Math.abs(distance / (vAvg || 1)); // Avoid inf
-       }
-    } else if (calcTarget === 'distance') {
-       const vAvg = velocity / shapeFactor;
-       distance = vAvg * duration;
+    if (type === 'Dwell/Traverse') {
+        // Dwell/Traverse implies Constant Velocity = Start Velocity
+        velocity = startV; 
+        // Velocity is NOT a calculation target, it is a Constraint.
+        // We can only toggle between Duration and Distance.
+        if (calcTarget === 'velocity') {
+            calcTarget = 'distance'; // Default fallback
+        }
     }
 
-    // 2. Solve Dynamics (Accel, Decel, Jerk) based on Vpeak and Time
-    // Formulas assume symmetric profiles for simplicity in this demo
-    if (type === 'Trapezoid') {
-        // 1/3 time for accel
-        const tAcc = duration / 3;
-        accel = Math.abs(velocity / tAcc);
-        decel = Math.abs(velocity / tAcc);
-    } else if (type === 'Triangle') {
-        // 1/2 time for accel
-        const tAcc = duration / 2;
-        accel = Math.abs(velocity / tAcc);
-        decel = Math.abs(velocity / tAcc);
-    } else if (type === 'Accel/Decel') {
-        // Full time for accel
-        accel = Math.abs(velocity / duration);
-        decel = 0; 
-    } else if (type === 'Dwell/Traverse') {
+    // --- 2. Solve Kinematics (d, v, t) ---
+    
+    const safeDur = duration === 0 ? 0.0001 : duration;
+
+    // Helper: Linear Motion Equation: d = v_start*t + 0.5*a*t^2 
+    // But simplified for profiles:
+    
+    if (type === 'Dwell/Traverse') {
+        // Constant V
+        if (calcTarget === 'distance') {
+            distance = velocity * duration;
+        } else if (calcTarget === 'duration') {
+             // If V is 0, duration cannot be calc'd from distance (0/0). 
+             // Logic: If V=0 (Dwell), user usually inputs Time. Distance is 0.
+             if (Math.abs(velocity) < 1e-6) {
+                 distance = 0;
+                 // If user tries to calc duration with V=0, it's undefined. 
+                 // We keep duration as is (user input effectively).
+             } else {
+                 duration = distance / velocity;
+             }
+        }
+        endV = velocity;
         accel = 0;
         decel = 0;
+    } 
+    else if (type === 'Accel/Decel') {
+        // Linear Ramp: StartV -> TargetV
+        // d = (v_start + v_end)/2 * t
+        
+        if (calcTarget === 'velocity') {
+            // Calculate Target V based on Dist and Time
+            // v_avg = d/t. v_end = 2*v_avg - v_start
+            const vAvg = distance / safeDur;
+            velocity = 2 * vAvg - startV;
+        } else if (calcTarget === 'distance') {
+            const vAvg = (startV + velocity) / 2;
+            distance = vAvg * duration;
+        } else if (calcTarget === 'duration') {
+            const vAvg = (startV + velocity) / 2;
+            if (Math.abs(vAvg) < 1e-6) duration = 0; 
+            else duration = distance / vAvg;
+        }
+        endV = velocity;
+        accel = Math.abs((endV - startV) / safeDur); // Technically single slope
+        decel = 0; // Using accel field for slope
     }
-    
-    // Jerk approximation (infinite for linear ramps, but let's show 0 or a value if S-Curve)
-    jerk = 0;
+    else {
+        // Point-to-Point Profiles (Trapezoid, Triangle, etc.)
+        // Assumption: These move relative distance and return to 0 (or blend, but simpler model here is P2P).
+        // Standard Factor approach assumes V_start = 0, V_end = 0.
+        
+        let shapeFactor = 1.0; 
+        if (type === 'Trapezoid') shapeFactor = 1.5;
+        if (type === 'Triangle') shapeFactor = 2.0;
+        
+        // If calcTarget is velocity, we calculate Peak Velocity
+        if (calcTarget === 'velocity') {
+           const vAvg = distance / safeDur;
+           velocity = vAvg * shapeFactor;
+        } else if (calcTarget === 'duration') {
+           const vAvg = velocity / shapeFactor;
+           duration = Math.abs(distance / (vAvg || 1));
+        } else if (calcTarget === 'distance') {
+           const vAvg = velocity / shapeFactor;
+           distance = vAvg * duration;
+        }
+        
+        endV = 0; // P2P usually stops.
+        
+        // Approx Dynamics
+        if (type === 'Trapezoid') {
+            const tAcc = duration / 3;
+            accel = Math.abs(velocity / tAcc);
+            decel = Math.abs(velocity / tAcc);
+        } else if (type === 'Triangle') {
+            const tAcc = duration / 2;
+            accel = Math.abs(velocity / tAcc);
+            decel = Math.abs(velocity / tAcc);
+        }
+    }
 
     return {
         ...seg,
+        calcTarget,
         duration,
         distance,
-        velocity,
+        velocity, // This is Target V or Peak V
+        startVelocity: startV,
+        endVelocity: endV,
         accel,
         decel,
         jerk
     };
   };
 
+  // Recalculates the entire chain starting from index 0
+  const recalculateChain = (currentSegments: MotionSegment[]): MotionSegment[] => {
+      let currentV = 0;
+      return currentSegments.map(seg => {
+          const solved = solveSegment(seg, currentV);
+          currentV = solved.endVelocity;
+          return solved;
+      });
+  };
+
   const updateSegment = (id: string, updates: Partial<MotionSegment>) => {
-    setSegments(prev => prev.map(s => {
-      if (s.id !== id) return s;
-      
-      const updated = { ...s, ...updates };
-      // Logic for calcTarget switching
-      // If we are locking the current target (e.g. was calc Velocity, now user enters Velocity)
-      // We must unlock something else. Priority: Unlock Distance, then Duration.
-      if (updates.calcTarget === undefined && updates.velocity !== undefined && s.calcTarget === 'velocity') {
-          // User edited Velocity manually, so Velocity becomes Input.
-          // We need a new target. Let's solve for Distance.
-          updated.calcTarget = 'distance'; 
-      }
-      
-      return solveSegment(updated);
-    }));
+    setSegments(prev => {
+      // 1. Apply updates to the specific segment
+      const updatedList = prev.map(s => {
+        if (s.id !== id) return s;
+        
+        const newSeg = { ...s, ...updates };
+        
+        // Handle CalcTarget constraints switch logic
+        if (updates.calcTarget === undefined && updates.velocity !== undefined && s.calcTarget === 'velocity') {
+            // User manually typed velocity, force calculation to distance
+            newSeg.calcTarget = 'distance';
+        }
+        if (newSeg.type === 'Dwell/Traverse' && newSeg.calcTarget === 'velocity') {
+            newSeg.calcTarget = 'distance'; // Velocity is locked by definition
+        }
+        
+        return newSeg;
+      });
+
+      // 2. Recalculate chain to propagate StartVelocity effects
+      return recalculateChain(updatedList);
+    });
   };
 
   // Helper to switch lock state
   const handleLockClick = (seg: MotionSegment, target: CalcTarget) => {
-      // If clicking the Open Lock (currently calculated), it becomes Closed (Input).
-      // We must choose another field to become Open (Calculated).
-      // If clicking a Closed Lock (currently input), it becomes Open (Calculated).
-      
-      if (seg.calcTarget === target) {
-          // It is currently calculated (Open). User wants to Lock it.
-          // Do nothing? Or force another to unlock?
-          // Usually clicking an open lock means "I want to set this".
-          // But to set it, we just type in the box.
-          // Let's assume clicking lock explicitly sets it as the Calculated field.
-          return; 
-      } else {
-          // It is currently Input (Closed). User wants to Unlock it (make it calculated).
-          updateSegment(seg.id, { calcTarget: target });
-      }
+      if (seg.calcTarget === target) return; // Already unlocked (calculated)
+      updateSegment(seg.id, { calcTarget: target });
   };
 
   const addSegment = () => {
@@ -217,22 +266,34 @@ export const ProfileEditor: React.FC = () => {
     const newSeg: MotionSegment = {
        id: newId, type: 'Dwell/Traverse',
        duration: 1.0, distance: 0, velocity: 0,
+       startVelocity: 0, endVelocity: 0,
        accel: 0, decel: 0, jerk: 0, payload: 0,
        calcTarget: 'distance',
        distUnitType: 'angle'
     };
-    setSegments([...segments, solveSegment(newSeg)]);
+    
+    // Add and recalculate
+    setSegments(prev => recalculateChain([...prev, newSeg]));
     setSelectedId(newId);
   };
 
   const removeSegment = (id: string) => {
     if (segments.length <= 1) return;
     const newSegs = segments.filter(s => s.id !== id);
-    setSegments(newSegs);
+    setSegments(recalculateChain(newSegs));
     if (selectedId === id) setSelectedId(newSegs[0].id);
   };
 
   const selectedSegment = segments.find(s => s.id === selectedId) || segments[0];
+  
+  // Calculate Absolute Positions for Grid Display
+  const gridData = useMemo(() => {
+      let absPos = 0;
+      return segments.map(s => {
+          absPos += s.distance;
+          return { ...s, absPos };
+      });
+  }, [segments]);
 
   // --- Chart Calculation ---
   const chartData = useMemo(() => {
@@ -243,31 +304,34 @@ export const ProfileEditor: React.FC = () => {
     segments.forEach(seg => {
         const startT = currentTime;
         const endT = currentTime + seg.duration;
-        const V = seg.velocity;
-        
+        const startV = seg.startVelocity;
+        const targetV = seg.velocity; // Peak for P2P, Const for Dwell, Target for Accel
+
         if (seg.type === 'Trapezoid') {
+             // Simplified Trapezoid: Start(0) -> V_peak -> End(0)
+             // Assumes independent move. If startV != 0, this logic would need complex blending.
+             // For now, P2P moves assume starting from stop or handling their own ramp up/down.
              const t1 = startT + (seg.duration * 0.33);
              const t2 = startT + (seg.duration * 0.66);
-             points.push({ x: t1, y: V });
-             points.push({ x: t2, y: V });
+             points.push({ x: t1, y: targetV });
+             points.push({ x: t2, y: targetV });
              points.push({ x: endT, y: 0 }); 
         } else if (seg.type === 'Triangle') {
              const tMid = startT + (seg.duration * 0.5);
-             points.push({ x: tMid, y: V });
+             points.push({ x: tMid, y: targetV });
              points.push({ x: endT, y: 0 });
         } else if (seg.type === 'Dwell/Traverse') {
-             if (seg.distance === 0) {
-                 points.push({ x: endT, y: 0 });
-             } else {
-                 points.push({ x: endT, y: V }); 
-             }
+             // Constant V from startV
+             points.push({ x: endT, y: startV });
         } else if (seg.type === 'Accel/Decel') {
-             points.push({ x: endT, y: V });
+             // Linear: StartV -> TargetV
+             points.push({ x: endT, y: targetV });
         } else {
-             points.push({ x: endT, y: V });
+             points.push({ x: endT, y: targetV });
         }
 
-        if (Math.abs(V) > maxV) maxV = Math.abs(V);
+        const peak = Math.max(Math.abs(startV), Math.abs(targetV), Math.abs(seg.endVelocity));
+        if (peak > maxV) maxV = peak;
         currentTime = endT;
     });
 
@@ -302,13 +366,13 @@ export const ProfileEditor: React.FC = () => {
                <div className="text-center">#</div>
                <div className="px-1 border-l border-gray-300">Type</div>
                <div className="px-1 border-l border-gray-300 text-right">Time</div>
-               <div className="px-1 border-l border-gray-300 text-right">Dist</div>
-               <div className="px-1 border-l border-gray-300 text-right">V Max</div>
+               <div className="px-1 border-l border-gray-300 text-right">End Pos</div>
+               <div className="px-1 border-l border-gray-300 text-right">V End</div>
                <div></div>
            </div>
 
            <div className="flex-1 overflow-y-auto bg-white">
-               {segments.map((seg, idx) => (
+               {gridData.map((seg, idx) => (
                    <div 
                       key={seg.id}
                       onClick={() => setSelectedId(seg.id)}
@@ -334,8 +398,8 @@ export const ProfileEditor: React.FC = () => {
                            </select>
                        </div>
                        <div className="p-1 text-right border-r border-gray-200 truncate">{seg.duration.toFixed(3)}</div>
-                       <div className="p-1 text-right border-r border-gray-200 truncate">{seg.distance.toFixed(1)}</div>
-                       <div className="p-1 text-right border-r border-gray-200 truncate">{seg.velocity.toFixed(1)}</div>
+                       <div className="p-1 text-right border-r border-gray-200 truncate">{seg.absPos.toFixed(1)}</div>
+                       <div className="p-1 text-right border-r border-gray-200 truncate">{seg.endVelocity.toFixed(1)}</div>
                        
                        <div className="flex items-center justify-center">
                            <button onClick={(e) => { e.stopPropagation(); removeSegment(seg.id); }} className="text-gray-400 hover:text-red-500">
@@ -370,7 +434,6 @@ export const ProfileEditor: React.FC = () => {
                    <div className="mb-3">
                       <div className="flex items-center justify-between mb-1">
                           <label className="text-xs text-gray-700 font-medium">Distance</label>
-                          {/* Unit Type Toggle for Distance */}
                           <select 
                              className="text-[10px] bg-transparent border-none outline-none text-gray-500 cursor-pointer hover:text-blue-600"
                              value={selectedSegment.distUnitType}
@@ -400,12 +463,13 @@ export const ProfileEditor: React.FC = () => {
                       label="Velocity" 
                       locked={selectedSegment.calcTarget !== 'velocity'}
                       onToggleLock={() => handleLockClick(selectedSegment, 'velocity')}
+                      disabledLock={selectedSegment.type === 'Dwell/Traverse'}
                    >
                       <UnitInput 
                          type="speed"
                          value={selectedSegment.velocity}
                          onChange={(v) => updateSegment(selectedSegment.id, { velocity: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'velocity' ? 'distance' : selectedSegment.calcTarget })}
-                         readOnly={selectedSegment.calcTarget === 'velocity'}
+                         readOnly={selectedSegment.calcTarget === 'velocity' || selectedSegment.type === 'Dwell/Traverse'}
                       />
                    </DetailRow>
                 </div>
@@ -416,11 +480,6 @@ export const ProfileEditor: React.FC = () => {
                    
                    <ReadOnlyRow label="Accel.">
                       <UnitInput type="angle" value={selectedSegment.accel} onChange={()=>{}} readOnly /> 
-                      {/* Note: UnitInput type 'angle' is a placeholder if we lack 'acceleration' type. Using angle creates basic UI. 
-                          Ideally we add 'acceleration' to unitConversion.ts, but for now value displays raw or standard. 
-                          Wait, UnitInput handles display. If type is 'angle', it shows deg. 
-                          We need Rate units. We'll use 'speed' (deg/s) for now or just numeric readouts if types missing.
-                      */}
                    </ReadOnlyRow>
                    
                    <ReadOnlyRow label="Decel.">
