@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Plus, Trash2, ZoomIn, ZoomOut, BarChart2, Lock, Unlock, ChevronDown, ChevronRight, CheckSquare, Square, RefreshCw } from 'lucide-react';
 import { UnitInput, Select } from './Common';
 import { toBase } from '../utils/unitConversion';
@@ -152,9 +152,6 @@ const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, tota
             a = slope;
             j = 0;
         } else if (seg.type === 'Trapezoid') {
-            // Very simplified trapezoid logic from 0 to V to 0 for P2P
-            // Note: This logic assumes startV=0, endV=0 for P2P visual.
-            // A real P2P solver is much more complex handling non-zero start/end.
             if (t_local < t_acc) {
                 a = (seg.velocity > 0 ? 1 : -1) * Math.abs(seg.accel);
                 v = a * t_local;
@@ -196,7 +193,7 @@ const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, tota
             pos: currentPos,
             vel: v,
             acc: a,
-            jerk: j, // Simplified (would require derivation of a)
+            jerk: j, 
             torque: torque,
             motorVel: v * motorRatio
         });
@@ -213,6 +210,7 @@ const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, tota
 export const ProfileEditor: React.FC = () => {
   const [segments, setSegments] = useState<MotionSegment[]>(DEFAULT_SEGMENTS);
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_SEGMENTS[0].id);
+  const [cursorTime, setCursorTime] = useState<number | null>(null);
   
   // Chart Trace Config
   const [traces, setTraces] = useState<TraceConfig[]>([
@@ -396,6 +394,16 @@ export const ProfileEditor: React.FC = () => {
 
   const totalTime = timeSeries.length > 0 ? timeSeries[timeSeries.length - 1].t : 0;
 
+  // Find cursor values
+  const cursorPoint = useMemo(() => {
+     if (cursorTime === null || timeSeries.length === 0) return null;
+     // Find closest point
+     const closest = timeSeries.reduce((prev, curr) => 
+        Math.abs(curr.t - cursorTime) < Math.abs(prev.t - cursorTime) ? curr : prev
+     );
+     return closest;
+  }, [cursorTime, timeSeries]);
+
   // --- SVG Scaling ---
   const svgW = 600;
   const svgH = 250;
@@ -405,24 +413,47 @@ export const ProfileEditor: React.FC = () => {
   const scaleX = (t: number) => padX + (t / (totalTime || 1)) * (svgW - 2 * padX);
   
   // Independent Y scaling for each active trace to fit in the view
-  const getPath = (key: TraceType) => {
+  const getScaleYLocal = (key: TraceType) => {
       const stats = analysis[key];
       const range = Math.max(0.001, stats.max - stats.min);
-      // Pad range by 10%
       const minY = stats.min - (range * 0.05);
       const maxY = stats.max + (range * 0.05);
       const effectiveRange = maxY - minY;
-
-      const scaleYLocal = (val: number) => {
+      
+      return (val: number) => {
           const norm = (val - minY) / effectiveRange;
           return (svgH - padY) - (norm * (svgH - 2 * padY));
       };
+  };
 
+  const getPath = (key: TraceType) => {
+      const scaleYLocal = getScaleYLocal(key);
       return timeSeries.map((p, i) => 
         `${i === 0 ? 'M' : 'L'} ${scaleX(p.t).toFixed(1)},${scaleYLocal(p[key]).toFixed(1)}`
       ).join(' ');
   };
 
+  const handleGraphMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      
+      // Inverse Scale X
+      // x = padX + (t / totalTime) * (svgW - 2*padX)
+      // x - padX = (t / totalTime) * width
+      // t = ((x - padX) / width) * totalTime
+      
+      const plotWidth = svgW - 2 * padX;
+      const relativeX = x - padX;
+      let t = (relativeX / plotWidth) * totalTime;
+      
+      // Clamp
+      t = Math.max(0, Math.min(totalTime, t));
+      setCursorTime(t);
+  };
+
+  const handleGraphMouseLeave = () => {
+      setCursorTime(null);
+  };
 
   return (
     <div className="flex h-full border border-gray-300 bg-white font-sans text-xs">
@@ -609,12 +640,20 @@ export const ProfileEditor: React.FC = () => {
 
          {/* Chart Area */}
          <div className="flex-1 flex items-center justify-center overflow-hidden relative">
-            <div className="absolute top-2 right-2 flex space-x-1 z-10">
-               <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50"><ZoomIn size={14} className="text-gray-600"/></button>
-               <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50"><ZoomOut size={14} className="text-gray-600"/></button>
+            <div className="absolute top-2 right-2 flex space-x-1 z-10 pointer-events-none">
+               <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50 pointer-events-auto"><ZoomIn size={14} className="text-gray-600"/></button>
+               <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50 pointer-events-auto"><ZoomOut size={14} className="text-gray-600"/></button>
             </div>
 
-            <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="none" className="p-4 bg-white">
+            <svg 
+                width="100%" 
+                height="100%" 
+                viewBox={`0 0 ${svgW} ${svgH}`} 
+                preserveAspectRatio="none" 
+                className="p-4 bg-white cursor-crosshair"
+                onMouseMove={handleGraphMouseMove}
+                onMouseLeave={handleGraphMouseLeave}
+            >
                 {/* Background Grid */}
                 {Array.from({ length: 6 }).map((_, i) => {
                     const y = (svgH - padY) - (i * (svgH - 2*padY) / 5);
@@ -639,6 +678,36 @@ export const ProfileEditor: React.FC = () => {
                         />
                     );
                 })}
+                
+                {/* Cursor Line and Dots */}
+                {cursorTime !== null && cursorPoint && (
+                    <>
+                        <line 
+                            x1={scaleX(cursorTime)} 
+                            y1={padY} 
+                            x2={scaleX(cursorTime)} 
+                            y2={svgH - padY} 
+                            stroke="#555" 
+                            strokeDasharray="4,2" 
+                            strokeWidth="1"
+                        />
+                        {traces.map(t => {
+                            if (!t.active) return null;
+                            const scaleYLocal = getScaleYLocal(t.key);
+                            return (
+                                <circle 
+                                    key={`cursor-${t.key}`}
+                                    cx={scaleX(cursorTime)}
+                                    cy={scaleYLocal(cursorPoint[t.key])}
+                                    r="3"
+                                    fill={t.color}
+                                    stroke="white"
+                                    strokeWidth="1"
+                                />
+                            );
+                        })}
+                    </>
+                )}
 
                 <text x={svgW / 2} y={svgH - 5} textAnchor="middle" fontSize="10" fill="#666">Time (s)</text>
             </svg>
@@ -655,6 +724,7 @@ export const ProfileEditor: React.FC = () => {
                     <thead className="bg-gray-100 text-gray-500 sticky top-0">
                         <tr>
                             <th className="p-1 text-left pl-3 font-semibold">Trace</th>
+                            <th className="p-1 font-semibold text-blue-600">Cursor</th>
                             <th className="p-1 font-semibold">Min</th>
                             <th className="p-1 font-semibold">Max</th>
                             <th className="p-1 font-semibold">Avg</th>
@@ -665,10 +735,14 @@ export const ProfileEditor: React.FC = () => {
                         {traces.map(t => {
                             if (!t.active) return null;
                             const stat = analysis[t.key];
+                            const curVal = cursorPoint ? cursorPoint[t.key] : null;
                             return (
                                 <tr key={t.key} className="bg-white hover:bg-blue-50">
                                     <td className="p-1 text-left pl-3 border-l-4" style={{ borderLeftColor: t.color }}>
                                         {t.label} <span className="text-gray-400">({t.unit})</span>
+                                    </td>
+                                    <td className="p-1 font-bold text-blue-700 bg-blue-50/50">
+                                        {curVal !== null ? curVal.toFixed(2) : '-'}
                                     </td>
                                     <td className="p-1">{stat.min.toFixed(2)}</td>
                                     <td className="p-1">{stat.max.toFixed(2)}</td>
