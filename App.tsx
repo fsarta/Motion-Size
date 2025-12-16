@@ -3,7 +3,7 @@ import { Ribbon } from './components/Ribbon';
 import { TreeView } from './components/TreeView';
 import { WorkArea } from './components/MainView';
 import { WizardPanel } from './components/WizardPanel';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, AlertTriangle } from 'lucide-react';
 import { TreeNode } from './types';
 import { initialData } from './initialData';
 
@@ -24,10 +24,48 @@ const Footer = () => (
   </div>
 );
 
+const DeleteConfirmationModal = ({ node, onConfirm, onCancel }: { node: TreeNode | null, onConfirm: () => void, onCancel: () => void }) => {
+  if (!node) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-[1px]">
+      <div className="bg-win-bg border border-gray-400 shadow-xl w-80 font-sans text-xs">
+        <div className="bg-gradient-to-r from-red-100 to-gray-100 px-2 py-1 border-b border-gray-300 flex items-center text-gray-700 font-bold">
+          <AlertTriangle size={14} className="mr-2 text-red-600" />
+          Confirm Delete
+        </div>
+        <div className="p-4 bg-white flex flex-col items-center text-center">
+          <p className="mb-4 text-gray-700">
+            Are you sure you want to delete <br/>
+            <span className="font-bold">"{node.label}"</span>?
+          </p>
+          <div className="flex space-x-3 w-full justify-center">
+             <button 
+               onClick={onConfirm}
+               className="px-4 py-1 bg-white border border-gray-300 hover:bg-red-50 hover:border-red-300 rounded shadow-sm text-gray-700 font-medium w-20"
+             >
+               Yes
+             </button>
+             <button 
+               onClick={onCancel}
+               className="px-4 py-1 bg-white border border-gray-300 hover:bg-gray-50 rounded shadow-sm text-gray-700 w-20"
+             >
+               No
+             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const App = () => {
   const [data, setData] = useState<TreeNode[]>(initialData);
   const [selectedNodeId, setSelectedNodeId] = useState<string>('root');
   const [clipboard, setClipboard] = useState<TreeNode | null>(null);
+  
+  // State for delete confirmation
+  const [nodeToDelete, setNodeToDelete] = useState<TreeNode | null>(null);
 
   const toggleNode = (id: string) => {
     const toggleRecursive = (nodes: TreeNode[]): TreeNode[] => {
@@ -48,8 +86,50 @@ const App = () => {
     setSelectedNodeId(id);
   };
 
+  // Helper to find parent node
+  const findParent = (nodes: TreeNode[], childId: string): TreeNode | null => {
+    for (const node of nodes) {
+      if (node.children) {
+        if (node.children.some(c => c.id === childId)) return node;
+        const found = findParent(node.children, childId);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  // Helper to find a node
+  const findNode = (nodes: TreeNode[], id: string): TreeNode | null => {
+    for (const node of nodes) {
+      if (node.id === id) return node;
+      if (node.children) {
+        const found = findNode(node.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
   // Function to update the parameters of a specific node
   const handleUpdateNode = (id: string, newParams: Record<string, any>) => {
+    
+    // Check for Duplicate Name Constraint inside a group
+    if (newParams.axisName !== undefined) {
+      const parent = findParent(data, id);
+      if (parent && parent.children) {
+         const nameExists = parent.children.some(sibling => 
+            sibling.id !== id && 
+            sibling.type === 'axis' && 
+            sibling.parameters?.axisName === newParams.axisName
+         );
+
+         if (nameExists) {
+            alert(`An axis with the name "${newParams.axisName}" already exists in this group. Please choose a unique name.`);
+            return; // Prevent update
+         }
+      }
+    }
+
     const updateRecursive = (nodes: TreeNode[]): TreeNode[] => {
       return nodes.map(node => {
         if (node.id === id) {
@@ -84,20 +164,17 @@ const App = () => {
     };
   };
 
-  // Helper to find a node
-  const findNode = (nodes: TreeNode[], id: string): TreeNode | null => {
-    for (const node of nodes) {
-      if (node.id === id) return node;
-      if (node.children) {
-        const found = findNode(node.children, id);
-        if (found) return found;
-      }
+  const handleRequestDelete = (id: string) => {
+    const node = findNode(data, id);
+    if (node) {
+      setNodeToDelete(node);
     }
-    return null;
   };
 
-  const handleDeleteNode = (id: string) => {
-    // Cannot delete root if you want to keep at least one group, but let's allow deleting everything for now
+  const confirmDelete = () => {
+    if (!nodeToDelete) return;
+    const id = nodeToDelete.id;
+
     const deleteRecursive = (nodes: TreeNode[]): TreeNode[] => {
       return nodes
         .filter(node => node.id !== id)
@@ -108,6 +185,11 @@ const App = () => {
     };
     setData(deleteRecursive(data));
     if (selectedNodeId === id) setSelectedNodeId('root');
+    setNodeToDelete(null);
+  };
+
+  const cancelDelete = () => {
+    setNodeToDelete(null);
   };
 
   const handleCopyNode = (id: string) => {
@@ -124,10 +206,17 @@ const App = () => {
 
     const newNode = regenerateIds(clipboard);
 
-    // Scenario 1: Pasting a Group. It always goes to the Root level, regardless of target.
-    // Or, if specifically requested, we could nest groups, but usually Power Groups are top level.
+    // Ensure unique name on paste if it's an axis
+    if (clipboard.type === 'axis') {
+         // This is tricky because we don't know the parent until we find the target group.
+         // For now, we'll append "Copy" to ensure basic uniqueness visualy.
+         // A stricter check would happen if we scanned the target group first.
+         newNode.label = newNode.label + " (Copy)";
+         if (newNode.parameters) newNode.parameters.axisName = newNode.label;
+    }
+
+    // Scenario 1: Pasting a Group. It always goes to the Root level.
     if (clipboard.type === 'group') {
-      // Rename to Copy of... ? Optional.
       newNode.label = `${newNode.label} (Copy)`;
       setData(prev => [...prev, newNode]);
       return;
@@ -140,6 +229,17 @@ const App = () => {
          return nodes.map(node => {
            // If target is the group, push to its children
            if (node.id === targetId && node.type === 'group') {
+             
+             // Extra check: ensure uniqueness within this target group
+             let uniqueLabel = newNode.label;
+             let counter = 1;
+             while (node.children?.some(c => c.type === 'axis' && c.label === uniqueLabel)) {
+                uniqueLabel = `${newNode.label} (${counter})`;
+                counter++;
+             }
+             newNode.label = uniqueLabel;
+             if (newNode.parameters) newNode.parameters.axisName = uniqueLabel;
+
              return {
                ...node,
                children: [...(node.children || []), newNode],
@@ -190,7 +290,15 @@ const App = () => {
       if (targetGroup && targetGroup.children) {
         const existingAxes = targetGroup.children.filter((c: TreeNode) => c.type === 'axis');
         const count = existingAxes.length;
-        const axisLabel = `Axis ${count + 1}`;
+        
+        let axisLabel = `Axis ${count + 1}`;
+        // Verify uniqueness for new axis
+        let uniqueCounter = count + 1;
+        while(existingAxes.some((a: TreeNode) => a.label === axisLabel)) {
+            uniqueCounter++;
+            axisLabel = `Axis ${uniqueCounter}`;
+        }
+
         const newId = `axis_${Date.now()}`;
 
         const newAxis: TreeNode = {
@@ -292,6 +400,12 @@ const App = () => {
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden select-none">
+      <DeleteConfirmationModal 
+        node={nodeToDelete} 
+        onConfirm={confirmDelete} 
+        onCancel={cancelDelete} 
+      />
+
       <Ribbon onAddAxis={addAxis} />
       
       <div className="flex-1 flex flex-row overflow-hidden relative">
@@ -301,7 +415,7 @@ const App = () => {
           onSelect={handleSelect} 
           selectedId={selectedNodeId} 
           onAddGroup={addGroup}
-          onDeleteNode={handleDeleteNode}
+          onDeleteNode={handleRequestDelete}
           onCopyNode={handleCopyNode}
           onPasteNode={handlePasteNode}
           clipboard={clipboard}
