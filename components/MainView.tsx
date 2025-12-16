@@ -113,6 +113,8 @@ export const WorkArea = ({
     return selectedNode.label;
   };
 
+  const profileType = params.profileType || 'Time Based';
+
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
       {selectedNode.type === 'group' && <Visualizer axes={axes} />}
@@ -147,7 +149,7 @@ export const WorkArea = ({
             renderFormContent()
           ) : activeTab === 'Motion Profile' ? (
             <div className="h-full flex flex-col">
-              <ProfileEditor />
+              <ProfileEditor profileType={profileType as any} />
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-gray-400 text-xs italic border border-gray-200 border-dashed rounded bg-gray-50">

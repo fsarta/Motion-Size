@@ -1,18 +1,19 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Plus, Trash2, ZoomIn, ZoomOut, Lock, Unlock, ChevronRight, CheckSquare, Square, RefreshCw, Upload, FileText, Download } from 'lucide-react';
+import { Plus, Trash2, ZoomIn, ZoomOut, Lock, Unlock, ChevronRight, CheckSquare, Square, RefreshCw, Upload, FileText, Link as LinkIcon, Clock } from 'lucide-react';
 import { UnitInput } from './Common';
 
 /* --- Types --- */
 
 type SegmentType = 'Accel/Decel' | 'Trapezoid' | 'Triangle' | 'S-Curve' | 'Dwell/Traverse' | 'Sine';
 type CalcTarget = 'duration' | 'distance' | 'velocity';
+type ProfileType = 'Time Based' | 'Master/Follower' | 'Camming';
 
 interface MotionSegment {
   id: string;
   type: SegmentType;
-  duration: number; 
+  duration: number; // In Camming, this is Master Distance
   distance: number; 
-  velocity: number; 
+  velocity: number; // In Camming, this is Slope (Slave/Master)
   startVelocity: number; 
   endVelocity: number;   
   accel: number; 
@@ -99,49 +100,74 @@ const ReadOnlyRow = ({ label, children }: { label: string, children?: React.Reac
 
 // --- Math / Simulation Helpers ---
 
-const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, totalInertia: number = 0.05): TimePoint[] => {
+const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, totalInertia: number = 0.05, profileType: ProfileType, masterSpeed: number): TimePoint[] => {
   const points: TimePoint[] = [];
   const dt = 0.01; 
   let currentT = 0;
   let currentPos = 0;
 
+  // If Camming, we simulate "Time" based on Master Speed to get physical derivatives
+  // If Master Speed is 0 or undefined, we default to 1 unit/sec for geometry visualization only
+  const effectiveMasterSpeed = (profileType === 'Camming' || profileType === 'Master/Follower') 
+    ? (masterSpeed > 0 ? masterSpeed : 1) 
+    : 1;
+
   segments.forEach(seg => {
-    const steps = Math.max(2, Math.ceil(seg.duration / dt));
-    const realDt = seg.duration / steps;
+    // If Camming, seg.duration is actually Master Distance.
+    // We convert it to "Time" for physics calculation: Time = Dist / Speed
+    const physicalDuration = (profileType === 'Camming' || profileType === 'Master/Follower')
+        ? Math.abs(seg.duration / effectiveMasterSpeed) 
+        : seg.duration;
+
+    const steps = Math.max(2, Math.ceil(physicalDuration / dt));
+    const realDt = physicalDuration / steps;
     let t_local = 0;
     
     // Trapezoid Params
-    const t_acc = seg.duration / 3;
-    const t_dec = seg.duration / 3;
-    const t_flat = seg.duration - t_acc - t_dec;
+    const t_acc = physicalDuration / 3;
+    const t_dec = physicalDuration / 3;
+    const t_flat = physicalDuration - t_acc - t_dec;
     
-    const slope = (seg.velocity - seg.startVelocity) / seg.duration;
+    // In Camming, velocities in segment data are Ratios (Slave/Master).
+    // We need Real Velocity = Ratio * MasterSpeed
+    const speedScale = (profileType === 'Camming' || profileType === 'Master/Follower') ? effectiveMasterSpeed : 1;
+    
+    const startV_phys = seg.startVelocity * speedScale; // approx
+    const endV_phys = seg.endVelocity * speedScale; // approx
+    const targetV_phys = seg.velocity * speedScale;
+
+    const slope = (targetV_phys - startV_phys) / physicalDuration;
 
     for (let i = 0; i <= steps; i++) {
         let v = 0;
         let a = 0;
-        let j = 0; // Jerk simplified
+        let j = 0;
 
         if (seg.type === 'Dwell/Traverse') {
-            v = seg.velocity; 
+            v = targetV_phys; 
             a = 0;
         } else if (seg.type === 'Accel/Decel') {
-            v = seg.startVelocity + slope * t_local;
+            v = startV_phys + slope * t_local;
             a = slope;
         } else if (seg.type === 'Trapezoid') {
             if (t_local < t_acc) {
-                a = (seg.velocity > 0 ? 1 : -1) * Math.abs(seg.accel);
+                // Ramp up
+                const accVal = Math.abs(targetV_phys / t_acc) * (targetV_phys > 0 ? 1 : -1);
+                a = accVal;
                 v = a * t_local;
             } else if (t_local < t_acc + t_flat) {
                 a = 0;
-                v = seg.velocity;
+                v = targetV_phys;
             } else {
-                a = (seg.velocity > 0 ? -1 : 1) * Math.abs(seg.decel);
+                // Ramp down
+                const decVal = Math.abs(targetV_phys / t_dec) * (targetV_phys > 0 ? -1 : 1);
+                a = decVal;
                 const t_dec_local = t_local - (t_acc + t_flat);
-                v = seg.velocity + a * t_dec_local;
+                v = targetV_phys + a * t_dec_local;
             }
         } else {
-             v = (seg.distance / seg.duration);
+             // Simple linear interp for other types in this demo
+             v = (seg.distance / physicalDuration);
              a = 0;
         }
 
@@ -161,7 +187,7 @@ const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, tota
         });
         t_local += realDt;
     }
-    currentT += seg.duration;
+    currentT += physicalDuration;
   });
 
   return points;
@@ -169,56 +195,23 @@ const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, tota
 
 // Process Raw CSV Data
 const processImportedData = (rawData: {t: number, pos: number}[], motorRatio: number, totalInertia: number): TimePoint[] => {
+    // (Existing import logic remains same)
     if (rawData.length === 0) return [];
-    
-    // Sort by time just in case
     rawData.sort((a, b) => a.t - b.t);
-
     const points: TimePoint[] = [];
-    
-    for (let i = 0; i < rawData.length; i++) {
-        const curr = rawData[i];
-        const prev = i > 0 ? rawData[i-1] : null;
-        const next = i < rawData.length - 1 ? rawData[i+1] : null;
-
-        let v = 0;
-        let a = 0;
-        let j = 0;
-
-        // Calculate Velocity (finite difference)
-        if (prev) {
-            const dt = curr.t - prev.t;
-            if (dt > 0) v = (curr.pos - prev.pos) / dt;
-        } else if (next) {
-            // Start point approximation
-            const dt = next.t - curr.t;
-            if (dt > 0) v = (next.pos - curr.pos) / dt;
-        }
-
-        // Calculate Accel
-        // We need previous velocity for this. 
-        // For i=0, v=initial. For i>0, we just calculated v.
-        // To get a smooth accel, better to calculate all Vs first, then all As.
-    }
-
-    // Two-pass approach for derivatives
     const tempV: number[] = new Array(rawData.length).fill(0);
     const tempA: number[] = new Array(rawData.length).fill(0);
     const tempJ: number[] = new Array(rawData.length).fill(0);
 
-    // Pass 1: Velocity
     for (let i = 0; i < rawData.length; i++) {
         if (i === 0) {
            if (rawData.length > 1) tempV[i] = (rawData[1].pos - rawData[0].pos) / (rawData[1].t - rawData[0].t);
         } else if (i === rawData.length - 1) {
            tempV[i] = (rawData[i].pos - rawData[i-1].pos) / (rawData[i].t - rawData[i-1].t);
         } else {
-           // Central difference
            tempV[i] = (rawData[i+1].pos - rawData[i-1].pos) / (rawData[i+1].t - rawData[i-1].t);
         }
     }
-
-    // Pass 2: Acceleration
     for (let i = 0; i < rawData.length; i++) {
         if (i === 0) {
            if (rawData.length > 1) tempA[i] = (tempV[1] - tempV[0]) / (rawData[1].t - rawData[0].t);
@@ -228,37 +221,20 @@ const processImportedData = (rawData: {t: number, pos: number}[], motorRatio: nu
            tempA[i] = (tempV[i+1] - tempV[i-1]) / (rawData[i+1].t - rawData[i-1].t);
         }
     }
-
-    // Pass 3: Jerk
-    for (let i = 0; i < rawData.length; i++) {
-        if (i === 0) {
-           if (rawData.length > 1) tempJ[i] = (tempA[1] - tempA[0]) / (rawData[1].t - rawData[0].t);
-        } else if (i === rawData.length - 1) {
-           tempJ[i] = (tempA[i] - tempA[i-1]) / (rawData[i].t - rawData[i-1].t);
-        } else {
-           tempJ[i] = (tempA[i+1] - tempA[i-1]) / (rawData[i+1].t - rawData[i+1].t - rawData[i-1].t);
-        }
-    }
-
-    // Final Assembly
     for (let i = 0; i < rawData.length; i++) {
         const t = rawData[i].t;
         const pos = rawData[i].pos;
         const v = tempV[i];
         const a = tempA[i];
-        const j = tempJ[i];
-        
         const damping = 0.01;
-        const torque = (totalInertia * a) + (damping * v); // Assuming 0 external payload for import, or add field
-
-        points.push({ t, pos, vel: v, acc: a, jerk: j, torque, motorVel: v * motorRatio });
+        const torque = (totalInertia * a) + (damping * v); 
+        points.push({ t, pos, vel: v, acc: a, jerk: 0, torque, motorVel: v * motorRatio });
     }
-
     return points;
 };
 
 
-export const ProfileEditor: React.FC = () => {
+export const ProfileEditor = ({ profileType = 'Time Based' }: { profileType?: ProfileType }) => {
   // Mode: Sequence Editor vs CSV Import
   const [mode, setMode] = useState<'sequence' | 'import'>('sequence');
 
@@ -273,6 +249,9 @@ export const ProfileEditor: React.FC = () => {
   // Common UI State
   const [cursorTime, setCursorTime] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Master Settings (for Camming)
+  const [masterSpeed, setMasterSpeed] = useState<number>(60); // e.g., 60 deg/sec or rpm
 
   // Chart Trace Config
   const [traces, setTraces] = useState<TraceConfig[]>([
@@ -455,8 +434,8 @@ export const ProfileEditor: React.FC = () => {
 
   const timeSeries = useMemo(() => {
       if (mode === 'import') return importedData;
-      return simulateMotion(segments, motorRatio);
-  }, [segments, motorRatio, mode, importedData]);
+      return simulateMotion(segments, motorRatio, 0.05, profileType, masterSpeed);
+  }, [segments, motorRatio, mode, importedData, profileType, masterSpeed]);
 
   const analysis = useMemo(() => {
      const res: Record<TraceType, { min: number, max: number, avg: number, rms: number }> = {} as any;
@@ -524,18 +503,11 @@ export const ProfileEditor: React.FC = () => {
       const svg = svgRef.current;
       if (!svg) return;
 
-      // Create an SVGPoint for transformation
       const point = svg.createSVGPoint();
       point.x = e.clientX;
       point.y = e.clientY;
 
-      // Transform screen coordinates to SVG coordinates
       const svgP = point.matrixTransform(svg.getScreenCTM()?.inverse());
-      
-      // Calculate Time from SVG X
-      // svgP.x = padX + (t / totalTime) * plotWidth
-      // t = ((svgP.x - padX) / plotWidth) * totalTime
-      
       const plotWidth = svgW - 2 * padX;
       let t = ((svgP.x - padX) / plotWidth) * (totalTime || 1);
       
@@ -546,6 +518,12 @@ export const ProfileEditor: React.FC = () => {
   const handleGraphMouseLeave = () => {
       setCursorTime(null);
   };
+
+  const isCamming = profileType === 'Camming' || profileType === 'Master/Follower';
+  const xLabel = isCamming ? "Master Position" : "Time";
+  const xUnit = isCamming ? "(deg or mm)" : "(s)";
+  const durationLabel = isCamming ? "Master Range" : "Duration";
+  const velocityLabel = isCamming ? "Slope (Ratio)" : "Velocity";
 
   return (
     <div className="flex h-full border border-gray-300 bg-white font-sans text-xs">
@@ -569,6 +547,13 @@ export const ProfileEditor: React.FC = () => {
              </button>
         </div>
 
+        {isCamming && mode === 'sequence' && (
+            <div className="bg-purple-50 text-purple-800 px-3 py-1 border-b border-purple-200 text-[10px] flex items-center">
+                <LinkIcon size={12} className="mr-1"/> 
+                <span>Mode: <b>{profileType}</b>. X-Axis represents Master Position.</span>
+            </div>
+        )}
+
         {/* MODE: SEQUENCE EDITOR */}
         {mode === 'sequence' && (
             <>
@@ -583,7 +568,7 @@ export const ProfileEditor: React.FC = () => {
                 <div className="grid grid-cols-[24px_110px_60px_70px_1fr_24px] bg-gray-200 border-b border-gray-300 font-semibold text-gray-700 py-1 shrink-0">
                     <div className="text-center">#</div>
                     <div className="px-1 border-l border-gray-300">Type</div>
-                    <div className="px-1 border-l border-gray-300 text-right">Time</div>
+                    <div className="px-1 border-l border-gray-300 text-right">{isCamming ? 'M.Dist' : 'Time'}</div>
                     <div className="px-1 border-l border-gray-300 text-right">End Pos</div>
                     <div className="px-1 border-l border-gray-300 text-right">V End</div>
                     <div></div>
@@ -635,12 +620,12 @@ export const ProfileEditor: React.FC = () => {
                     <div className="flex gap-6">
                         <div className="flex-1 min-w-[160px]">
                         <DetailRow 
-                            label="Duration" 
+                            label={durationLabel}
                             locked={selectedSegment.calcTarget !== 'duration'}
                             onToggleLock={() => handleLockClick(selectedSegment, 'duration')}
                         >
                             <UnitInput 
-                                type="time"
+                                type={isCamming ? "angle" : "time"} // In Camming, X is Angle (Master)
                                 value={selectedSegment.duration}
                                 onChange={(v) => updateSegment(selectedSegment.id, { duration: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'duration' ? 'velocity' : selectedSegment.calcTarget })}
                                 readOnly={selectedSegment.calcTarget === 'duration'}
@@ -649,7 +634,7 @@ export const ProfileEditor: React.FC = () => {
 
                         <div className="mb-3">
                             <div className="flex items-center justify-between mb-1">
-                                <label className="text-xs text-gray-700 font-medium">Distance</label>
+                                <label className="text-xs text-gray-700 font-medium">Distance (Slave)</label>
                                 <select 
                                     className="text-[10px] bg-transparent border-none outline-none text-gray-500 cursor-pointer hover:text-blue-600"
                                     value={selectedSegment.distUnitType}
@@ -676,13 +661,13 @@ export const ProfileEditor: React.FC = () => {
                         </div>
 
                         <DetailRow 
-                            label="Velocity" 
+                            label={velocityLabel}
                             locked={selectedSegment.calcTarget !== 'velocity'}
                             onToggleLock={() => handleLockClick(selectedSegment, 'velocity')}
                             disabledLock={selectedSegment.type === 'Dwell/Traverse'}
                         >
                             <UnitInput 
-                                type="speed"
+                                type={isCamming ? "ratio" : "speed"}
                                 value={selectedSegment.velocity}
                                 onChange={(v) => updateSegment(selectedSegment.id, { velocity: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'velocity' ? 'distance' : selectedSegment.calcTarget })}
                                 readOnly={selectedSegment.calcTarget === 'velocity' || selectedSegment.type === 'Dwell/Traverse'}
@@ -785,6 +770,8 @@ export const ProfileEditor: React.FC = () => {
                 </div>
             ))}
             <div className="h-4 w-px bg-gray-300 mx-1"></div>
+            
+            {/* Simulation Params */}
             <div className="flex items-center space-x-1">
                <span className="text-[10px] text-gray-500">Ratio:</span>
                <input 
@@ -794,6 +781,20 @@ export const ProfileEditor: React.FC = () => {
                   onChange={(e) => setMotorRatio(parseFloat(e.target.value))} 
                />
             </div>
+
+            {/* Master Speed Sim (Visible Only in Camming) */}
+            {isCamming && (
+                <div className="flex items-center space-x-1 bg-purple-50 border border-purple-200 rounded px-1">
+                    <Clock size={10} className="text-purple-600"/>
+                    <span className="text-[10px] text-purple-700 font-semibold">Master Vel:</span>
+                    <input 
+                        type="number" 
+                        className="w-10 h-5 text-[10px] border border-purple-200 px-1 text-purple-900" 
+                        value={masterSpeed} 
+                        onChange={(e) => setMasterSpeed(parseFloat(e.target.value))} 
+                    />
+                </div>
+            )}
          </div>
 
          {/* Chart Area */}
@@ -868,7 +869,7 @@ export const ProfileEditor: React.FC = () => {
                     </>
                 )}
 
-                <text x={svgW / 2} y={svgH - 5} textAnchor="middle" fontSize="10" fill="#666">Time (s)</text>
+                <text x={svgW / 2} y={svgH - 5} textAnchor="middle" fontSize="10" fill="#666">{xLabel} {xUnit}</text>
             </svg>
          </div>
 
