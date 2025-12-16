@@ -795,7 +795,12 @@ const AxisForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => voi
       <div className="grid grid-cols-2 gap-8">
         <div>
           <InputGroup label="Axis Name">
-            <input type="text" className="w-full text-xs border border-gray-300 px-1 h-6" value={params.axisName} onChange={(e) => handleChange('axisName', e.target.value)} />
+            <input 
+              type="text" 
+              className="w-full text-xs border border-gray-300 px-1 h-6 bg-white text-gray-900" 
+              value={params.axisName} 
+              onChange={(e) => handleChange('axisName', e.target.value)} 
+            />
           </InputGroup>
           <InputGroup label="Profile Type">
              <Select value={params.profileType} options={['Time Based', 'Master/Follower', 'Camming']} onChange={(e) => handleChange('profileType', e.target.value)} />
