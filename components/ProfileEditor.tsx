@@ -1,37 +1,57 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, ZoomIn, ZoomOut, BarChart2, Lock, Unlock, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, ZoomIn, ZoomOut, BarChart2, Lock, Unlock, ChevronDown, ChevronRight, CheckSquare, Square, RefreshCw } from 'lucide-react';
 import { UnitInput, Select } from './Common';
 import { toBase } from '../utils/unitConversion';
 
 /* --- Types --- */
 
 type SegmentType = 'Accel/Decel' | 'Trapezoid' | 'Triangle' | 'S-Curve' | 'Dwell/Traverse' | 'Sine';
-type CalcTarget = 'duration' | 'distance' | 'velocity'; // Which parameter is calculated?
+type CalcTarget = 'duration' | 'distance' | 'velocity';
 
 interface MotionSegment {
   id: string;
   type: SegmentType;
   
-  // Basic Kinematics (Stored in Base Units: s, deg/mm, deg/s / mm/s)
+  // Basic Kinematics
   duration: number; 
   distance: number; 
-  velocity: number; // Target Velocity or Peak Velocity depending on type
-  startVelocity: number; // Calculated from previous segment
-  endVelocity: number;   // Calculated result
+  velocity: number; 
+  startVelocity: number; 
+  endVelocity: number;   
   
-  // Dynamics (Calculated/Stored)
+  // Dynamics
   accel: number; 
   decel: number;
   jerk: number;
   
   // Configuration
-  payload: number; 
+  payload: number; // External force/torque
   
   // State
-  calcTarget: CalcTarget; // The "Unlocked" parameter
+  calcTarget: CalcTarget;
   
   // UI Preferences
-  distUnitType: 'angle' | 'length'; // User toggle for Rotary vs Linear
+  distUnitType: 'angle' | 'length';
+}
+
+interface TimePoint {
+  t: number;
+  pos: number;
+  vel: number;
+  acc: number;
+  jerk: number;
+  torque: number;
+  motorVel: number;
+}
+
+type TraceType = 'pos' | 'vel' | 'acc' | 'jerk' | 'torque' | 'motorVel';
+
+interface TraceConfig {
+  key: TraceType;
+  label: string;
+  color: string;
+  unit: string;
+  active: boolean;
 }
 
 const DEFAULT_SEGMENTS: MotionSegment[] = [
@@ -65,19 +85,7 @@ const LockButton = ({ locked, onClick, disabled }: { locked: boolean, onClick: (
   </button>
 );
 
-const DetailRow = ({ 
-  label, 
-  children,
-  locked,
-  onToggleLock,
-  disabledLock
-}: { 
-  label: string, 
-  children: React.ReactNode, 
-  locked: boolean, 
-  onToggleLock: () => void,
-  disabledLock?: boolean
-}) => (
+const DetailRow = ({ label, children, locked, onToggleLock, disabledLock }: any) => (
   <div className="mb-3">
     <div className="flex items-center justify-between mb-1">
       <label className="text-xs text-gray-700 font-medium">{label}</label>
@@ -100,63 +108,147 @@ const ReadOnlyRow = ({ label, children }: { label: string, children: React.React
   </div>
 );
 
+// --- Math / Simulation Helpers ---
+
+const simulateMotion = (segments: MotionSegment[], motorRatio: number = 10, totalInertia: number = 0.05): TimePoint[] => {
+  const points: TimePoint[] = [];
+  const dt = 0.01; // 10ms sampling
+  let currentT = 0;
+  let currentPos = 0;
+
+  segments.forEach(seg => {
+    const steps = Math.max(2, Math.ceil(seg.duration / dt));
+    const realDt = seg.duration / steps;
+    
+    // Determine profile shape parameters locally
+    // Simple kinematics for visualization:
+    // Trapezoid: Accel -> Flat -> Decel
+    // Dwell/Traverse: Flat
+    // Accel/Decel: Linear Ramp
+    
+    let t_local = 0;
+    
+    // Pre-calculations for Trapezoid (symmetric 1/3, 1/3, 1/3 approximation)
+    const t_acc = seg.duration / 3;
+    const t_dec = seg.duration / 3;
+    const t_flat = seg.duration - t_acc - t_dec;
+    const a_val = seg.accel; 
+    const d_val = seg.decel;
+    
+    // For linear ramp (Accel/Decel)
+    const slope = (seg.velocity - seg.startVelocity) / seg.duration;
+
+    for (let i = 0; i <= steps; i++) {
+        let v = 0;
+        let a = 0;
+        let j = 0;
+
+        if (seg.type === 'Dwell/Traverse') {
+            v = seg.velocity; // Constant
+            a = 0;
+            j = 0;
+        } else if (seg.type === 'Accel/Decel') {
+            v = seg.startVelocity + slope * t_local;
+            a = slope;
+            j = 0;
+        } else if (seg.type === 'Trapezoid') {
+            // Very simplified trapezoid logic from 0 to V to 0 for P2P
+            // Note: This logic assumes startV=0, endV=0 for P2P visual.
+            // A real P2P solver is much more complex handling non-zero start/end.
+            if (t_local < t_acc) {
+                a = (seg.velocity > 0 ? 1 : -1) * Math.abs(seg.accel);
+                v = a * t_local;
+            } else if (t_local < t_acc + t_flat) {
+                a = 0;
+                v = seg.velocity;
+            } else {
+                a = (seg.velocity > 0 ? -1 : 1) * Math.abs(seg.decel);
+                const t_dec_local = t_local - (t_acc + t_flat);
+                v = seg.velocity + a * t_dec_local;
+            }
+        } else if (seg.type === 'Triangle') {
+            const t_half = seg.duration / 2;
+            if (t_local < t_half) {
+                a = (seg.velocity > 0 ? 1 : -1) * Math.abs(seg.accel);
+                v = a * t_local;
+            } else {
+                a = (seg.velocity > 0 ? -1 : 1) * Math.abs(seg.decel);
+                const t_dec_local = t_local - t_half;
+                v = seg.velocity + a * t_dec_local;
+            }
+        } else {
+            // Default linear
+             v = (seg.distance / seg.duration);
+             a = 0;
+        }
+
+        // Integrate Position
+        if (i > 0) {
+            currentPos += v * realDt;
+        }
+
+        // Torque Estimation: T = J*a + ExtForce (payload) + Friction (simple damping c*v)
+        const damping = 0.01;
+        const torque = (totalInertia * a) + seg.payload + (damping * v);
+
+        points.push({
+            t: currentT + t_local,
+            pos: currentPos,
+            vel: v,
+            acc: a,
+            jerk: j, // Simplified (would require derivation of a)
+            torque: torque,
+            motorVel: v * motorRatio
+        });
+
+        t_local += realDt;
+    }
+    currentT += seg.duration;
+  });
+
+  return points;
+};
+
+
 export const ProfileEditor: React.FC = () => {
   const [segments, setSegments] = useState<MotionSegment[]>(DEFAULT_SEGMENTS);
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_SEGMENTS[0].id);
+  
+  // Chart Trace Config
+  const [traces, setTraces] = useState<TraceConfig[]>([
+    { key: 'pos', label: 'Position', color: '#10b981', unit: 'deg', active: true },
+    { key: 'vel', label: 'Velocity', color: '#3b82f6', unit: 'deg/s', active: true },
+    { key: 'acc', label: 'Accel', color: '#ef4444', unit: 'deg/s²', active: false },
+    { key: 'jerk', label: 'Jerk', color: '#f59e0b', unit: 'deg/s³', active: false },
+    { key: 'torque', label: 'Est. Torque', color: '#8b5cf6', unit: 'Nm', active: false },
+    { key: 'motorVel', label: 'Motor Speed', color: '#ec4899', unit: 'rpm', active: false },
+  ]);
+
+  const [motorRatio, setMotorRatio] = useState<number>(10);
 
   // --- Logic ---
 
-  // Solves single segment based on inputs and startVelocity
   const solveSegment = (seg: MotionSegment, startV: number): MotionSegment => {
     let { duration, distance, velocity, type, calcTarget } = seg;
     let accel = 0, decel = 0, jerk = 0;
     let endV = 0;
 
-    // --- 1. Enforce Constraints based on Type ---
-    
-    if (type === 'Dwell/Traverse') {
-        // Dwell/Traverse implies Constant Velocity = Start Velocity
-        velocity = startV; 
-        // Velocity is NOT a calculation target, it is a Constraint.
-        // We can only toggle between Duration and Distance.
-        if (calcTarget === 'velocity') {
-            calcTarget = 'distance'; // Default fallback
-        }
-    }
-
-    // --- 2. Solve Kinematics (d, v, t) ---
-    
     const safeDur = duration === 0 ? 0.0001 : duration;
 
-    // Helper: Linear Motion Equation: d = v_start*t + 0.5*a*t^2 
-    // But simplified for profiles:
-    
     if (type === 'Dwell/Traverse') {
-        // Constant V
+        velocity = startV; 
+        if (calcTarget === 'velocity') calcTarget = 'distance';
+        
         if (calcTarget === 'distance') {
             distance = velocity * duration;
         } else if (calcTarget === 'duration') {
-             // If V is 0, duration cannot be calc'd from distance (0/0). 
-             // Logic: If V=0 (Dwell), user usually inputs Time. Distance is 0.
-             if (Math.abs(velocity) < 1e-6) {
-                 distance = 0;
-                 // If user tries to calc duration with V=0, it's undefined. 
-                 // We keep duration as is (user input effectively).
-             } else {
-                 duration = distance / velocity;
-             }
+             if (Math.abs(velocity) < 1e-6) distance = 0; 
+             else duration = distance / velocity;
         }
         endV = velocity;
-        accel = 0;
-        decel = 0;
     } 
     else if (type === 'Accel/Decel') {
-        // Linear Ramp: StartV -> TargetV
-        // d = (v_start + v_end)/2 * t
-        
         if (calcTarget === 'velocity') {
-            // Calculate Target V based on Dist and Time
-            // v_avg = d/t. v_end = 2*v_avg - v_start
             const vAvg = distance / safeDur;
             velocity = 2 * vAvg - startV;
         } else if (calcTarget === 'distance') {
@@ -168,19 +260,15 @@ export const ProfileEditor: React.FC = () => {
             else duration = distance / vAvg;
         }
         endV = velocity;
-        accel = Math.abs((endV - startV) / safeDur); // Technically single slope
-        decel = 0; // Using accel field for slope
+        accel = Math.abs((endV - startV) / safeDur);
+        decel = 0; 
     }
     else {
-        // Point-to-Point Profiles (Trapezoid, Triangle, etc.)
-        // Assumption: These move relative distance and return to 0 (or blend, but simpler model here is P2P).
-        // Standard Factor approach assumes V_start = 0, V_end = 0.
-        
+        // Point-to-Point
         let shapeFactor = 1.0; 
         if (type === 'Trapezoid') shapeFactor = 1.5;
         if (type === 'Triangle') shapeFactor = 2.0;
         
-        // If calcTarget is velocity, we calculate Peak Velocity
         if (calcTarget === 'velocity') {
            const vAvg = distance / safeDur;
            velocity = vAvg * shapeFactor;
@@ -191,10 +279,8 @@ export const ProfileEditor: React.FC = () => {
            const vAvg = velocity / shapeFactor;
            distance = vAvg * duration;
         }
+        endV = 0; 
         
-        endV = 0; // P2P usually stops.
-        
-        // Approx Dynamics
         if (type === 'Trapezoid') {
             const tAcc = duration / 3;
             accel = Math.abs(velocity / tAcc);
@@ -211,7 +297,7 @@ export const ProfileEditor: React.FC = () => {
         calcTarget,
         duration,
         distance,
-        velocity, // This is Target V or Peak V
+        velocity,
         startVelocity: startV,
         endVelocity: endV,
         accel,
@@ -220,7 +306,6 @@ export const ProfileEditor: React.FC = () => {
     };
   };
 
-  // Recalculates the entire chain starting from index 0
   const recalculateChain = (currentSegments: MotionSegment[]): MotionSegment[] => {
       let currentV = 0;
       return currentSegments.map(seg => {
@@ -232,32 +317,23 @@ export const ProfileEditor: React.FC = () => {
 
   const updateSegment = (id: string, updates: Partial<MotionSegment>) => {
     setSegments(prev => {
-      // 1. Apply updates to the specific segment
       const updatedList = prev.map(s => {
         if (s.id !== id) return s;
-        
         const newSeg = { ...s, ...updates };
-        
-        // Handle CalcTarget constraints switch logic
         if (updates.calcTarget === undefined && updates.velocity !== undefined && s.calcTarget === 'velocity') {
-            // User manually typed velocity, force calculation to distance
             newSeg.calcTarget = 'distance';
         }
         if (newSeg.type === 'Dwell/Traverse' && newSeg.calcTarget === 'velocity') {
-            newSeg.calcTarget = 'distance'; // Velocity is locked by definition
+            newSeg.calcTarget = 'distance';
         }
-        
         return newSeg;
       });
-
-      // 2. Recalculate chain to propagate StartVelocity effects
       return recalculateChain(updatedList);
     });
   };
 
-  // Helper to switch lock state
   const handleLockClick = (seg: MotionSegment, target: CalcTarget) => {
-      if (seg.calcTarget === target) return; // Already unlocked (calculated)
+      if (seg.calcTarget === target) return; 
       updateSegment(seg.id, { calcTarget: target });
   };
 
@@ -271,8 +347,6 @@ export const ProfileEditor: React.FC = () => {
        calcTarget: 'distance',
        distUnitType: 'angle'
     };
-    
-    // Add and recalculate
     setSegments(prev => recalculateChain([...prev, newSeg]));
     setSelectedId(newId);
   };
@@ -284,9 +358,12 @@ export const ProfileEditor: React.FC = () => {
     if (selectedId === id) setSelectedId(newSegs[0].id);
   };
 
+  const toggleTrace = (key: TraceType) => {
+      setTraces(prev => prev.map(t => t.key === key ? { ...t, active: !t.active } : t));
+  };
+
   const selectedSegment = segments.find(s => s.id === selectedId) || segments[0];
   
-  // Calculate Absolute Positions for Grid Display
   const gridData = useMemo(() => {
       let absPos = 0;
       return segments.map(s => {
@@ -295,62 +372,63 @@ export const ProfileEditor: React.FC = () => {
       });
   }, [segments]);
 
-  // --- Chart Calculation ---
-  const chartData = useMemo(() => {
-    let currentTime = 0;
-    const points: { x: number; y: number }[] = [{ x: 0, y: 0 }];
-    let maxV = 10;
+  // --- Chart Data & Analysis ---
 
-    segments.forEach(seg => {
-        const startT = currentTime;
-        const endT = currentTime + seg.duration;
-        const startV = seg.startVelocity;
-        const targetV = seg.velocity; // Peak for P2P, Const for Dwell, Target for Accel
+  const timeSeries = useMemo(() => {
+      return simulateMotion(segments, motorRatio);
+  }, [segments, motorRatio]);
 
-        if (seg.type === 'Trapezoid') {
-             // Simplified Trapezoid: Start(0) -> V_peak -> End(0)
-             // Assumes independent move. If startV != 0, this logic would need complex blending.
-             // For now, P2P moves assume starting from stop or handling their own ramp up/down.
-             const t1 = startT + (seg.duration * 0.33);
-             const t2 = startT + (seg.duration * 0.66);
-             points.push({ x: t1, y: targetV });
-             points.push({ x: t2, y: targetV });
-             points.push({ x: endT, y: 0 }); 
-        } else if (seg.type === 'Triangle') {
-             const tMid = startT + (seg.duration * 0.5);
-             points.push({ x: tMid, y: targetV });
-             points.push({ x: endT, y: 0 });
-        } else if (seg.type === 'Dwell/Traverse') {
-             // Constant V from startV
-             points.push({ x: endT, y: startV });
-        } else if (seg.type === 'Accel/Decel') {
-             // Linear: StartV -> TargetV
-             points.push({ x: endT, y: targetV });
-        } else {
-             points.push({ x: endT, y: targetV });
-        }
+  const analysis = useMemo(() => {
+     const res: Record<TraceType, { min: number, max: number, avg: number, rms: number }> = {} as any;
+     
+     traces.forEach(t => {
+         const values = timeSeries.map(p => p[t.key]);
+         const min = Math.min(...values);
+         const max = Math.max(...values);
+         const sum = values.reduce((a, b) => a + b, 0);
+         const avg = sum / values.length;
+         const sqSum = values.reduce((a, b) => a + (b*b), 0);
+         const rms = Math.sqrt(sqSum / values.length);
+         res[t.key] = { min, max, avg, rms };
+     });
+     return res;
+  }, [timeSeries, traces]);
 
-        const peak = Math.max(Math.abs(startV), Math.abs(targetV), Math.abs(seg.endVelocity));
-        if (peak > maxV) maxV = peak;
-        currentTime = endT;
-    });
+  const totalTime = timeSeries.length > 0 ? timeSeries[timeSeries.length - 1].t : 0;
 
-    return { points, totalTime: currentTime, maxVel: maxV };
-  }, [segments]);
-
-  // --- Scaling ---
+  // --- SVG Scaling ---
   const svgW = 600;
-  const svgH = 300;
-  const pad = 40;
-  const scaleX = (x: number) => pad + (x / (chartData.totalTime || 1)) * (svgW - 2*pad);
-  const scaleY = (y: number) => (svgH - pad) - (y / ((chartData.maxVel || 10) * 1.2)) * (svgH - 2*pad);
+  const svgH = 250;
+  const padX = 40;
+  const padY = 20;
+
+  const scaleX = (t: number) => padX + (t / (totalTime || 1)) * (svgW - 2 * padX);
+  
+  // Independent Y scaling for each active trace to fit in the view
+  const getPath = (key: TraceType) => {
+      const stats = analysis[key];
+      const range = Math.max(0.001, stats.max - stats.min);
+      // Pad range by 10%
+      const minY = stats.min - (range * 0.05);
+      const maxY = stats.max + (range * 0.05);
+      const effectiveRange = maxY - minY;
+
+      const scaleYLocal = (val: number) => {
+          const norm = (val - minY) / effectiveRange;
+          return (svgH - padY) - (norm * (svgH - 2 * padY));
+      };
+
+      return timeSeries.map((p, i) => 
+        `${i === 0 ? 'M' : 'L'} ${scaleX(p.t).toFixed(1)},${scaleYLocal(p[key]).toFixed(1)}`
+      ).join(' ');
+  };
 
 
   return (
     <div className="flex h-full border border-gray-300 bg-white font-sans text-xs">
       
       {/* LEFT COLUMN: Grid & Detail Editor */}
-      <div className="w-[480px] flex flex-col border-r border-gray-300">
+      <div className="w-[480px] flex flex-col border-r border-gray-300 shrink-0">
         
         {/* 1. TOP: Segment Grid */}
         <div className="h-[40%] flex flex-col bg-white">
@@ -415,8 +493,6 @@ export const ProfileEditor: React.FC = () => {
         <div className="flex-1 bg-gray-100 border-t border-gray-300 p-4 shadow-inner overflow-y-auto">
            {selectedSegment && (
              <div className="flex gap-6">
-                
-                {/* Left Column: Kinematics Inputs */}
                 <div className="flex-1 min-w-[160px]">
                    <DetailRow 
                       label="Duration" 
@@ -472,92 +548,138 @@ export const ProfileEditor: React.FC = () => {
                          readOnly={selectedSegment.calcTarget === 'velocity' || selectedSegment.type === 'Dwell/Traverse'}
                       />
                    </DetailRow>
+
+                   <DetailRow label="Payload/Force" locked={true} onToggleLock={()=>{}} disabledLock={true}>
+                      <UnitInput 
+                         type="torque"
+                         value={selectedSegment.payload}
+                         onChange={(v) => updateSegment(selectedSegment.id, { payload: parseFloat(v) })}
+                      />
+                   </DetailRow>
                 </div>
 
-                {/* Right Column: Calculated Dynamics */}
                 <div className="flex-1 min-w-[180px] bg-gray-50 border border-gray-200 p-2 rounded-sm h-fit">
                    <div className="text-[10px] font-bold text-gray-400 uppercase mb-2 text-right">Calculated Results</div>
-                   
                    <ReadOnlyRow label="Accel.">
                       <UnitInput type="angle" value={selectedSegment.accel} onChange={()=>{}} readOnly /> 
                    </ReadOnlyRow>
-                   
                    <ReadOnlyRow label="Decel.">
                       <UnitInput type="angle" value={selectedSegment.decel} onChange={()=>{}} readOnly />
                    </ReadOnlyRow>
-                   
                    <div className="mt-4 border-t border-gray-200 pt-2">
                        <ReadOnlyRow label="Jerk">
                           <UnitInput type="angle" value={selectedSegment.jerk} onChange={()=>{}} readOnly />
                        </ReadOnlyRow>
                    </div>
                 </div>
-
              </div>
            )}
         </div>
       </div>
 
-      {/* RIGHT COLUMN: Chart */}
+      {/* RIGHT COLUMN: Chart & Analyzer */}
       <div className="flex-1 flex flex-col bg-white relative min-w-[300px]">
-         <div className="absolute top-2 right-2 flex space-x-1 z-10">
-            <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50"><ZoomIn size={14} className="text-gray-600"/></button>
-            <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50"><ZoomOut size={14} className="text-gray-600"/></button>
-            <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50"><BarChart2 size={14} className="text-gray-600"/></button>
+         
+         {/* Chart Toolbar / Legend */}
+         <div className="h-8 border-b border-gray-300 bg-gray-50 flex items-center px-2 space-x-3 shrink-0 overflow-x-auto">
+            {traces.map(t => (
+                <div 
+                   key={t.key} 
+                   className="flex items-center cursor-pointer select-none space-x-1 hover:bg-gray-200 px-1.5 py-0.5 rounded"
+                   onClick={() => toggleTrace(t.key)}
+                >
+                   <div className={`${t.active ? 'text-blue-600' : 'text-gray-400'}`}>
+                      {t.active ? <CheckSquare size={12} /> : <Square size={12} />}
+                   </div>
+                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: t.active ? t.color : '#ccc' }}></div>
+                   <span className={`text-[10px] font-medium ${t.active ? 'text-gray-700' : 'text-gray-400'}`}>{t.label}</span>
+                </div>
+            ))}
+            <div className="h-4 w-px bg-gray-300 mx-1"></div>
+            <div className="flex items-center space-x-1">
+               <span className="text-[10px] text-gray-500">Ratio:</span>
+               <input 
+                  type="number" 
+                  className="w-10 h-5 text-[10px] border border-gray-300 px-1" 
+                  value={motorRatio} 
+                  onChange={(e) => setMotorRatio(parseFloat(e.target.value))} 
+               />
+            </div>
          </div>
 
-         <div className="flex-1 flex items-center justify-center overflow-hidden">
-            <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="none" className="p-4">
+         {/* Chart Area */}
+         <div className="flex-1 flex items-center justify-center overflow-hidden relative">
+            <div className="absolute top-2 right-2 flex space-x-1 z-10">
+               <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50"><ZoomIn size={14} className="text-gray-600"/></button>
+               <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50"><ZoomOut size={14} className="text-gray-600"/></button>
+            </div>
+
+            <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="none" className="p-4 bg-white">
                 {/* Background Grid */}
                 {Array.from({ length: 6 }).map((_, i) => {
-                    const y = scaleY(i * (chartData.maxVel * 1.2 / 5));
+                    const y = (svgH - padY) - (i * (svgH - 2*padY) / 5);
                     return (
-                        <g key={i}>
-                            <line x1={pad} y1={y} x2={svgW - pad} y2={y} stroke="#f0f0f0" />
-                            <text x={pad - 5} y={y + 3} textAnchor="end" fontSize="10" fill="#999">
-                                {Math.round(i * (chartData.maxVel * 1.2 / 5))}
-                            </text>
-                        </g>
+                        <line key={i} x1={padX} y1={y} x2={svgW - padX} y2={y} stroke="#f0f0f0" />
+                    );
+                })}
+                <line x1={padX} y1={svgH - padY} x2={svgW - padX} y2={svgH - padY} stroke="#ccc" />
+                <line x1={padX} y1={padY} x2={padX} y2={svgH - padY} stroke="#ccc" />
+                
+                {/* Paths */}
+                {traces.map(t => {
+                    if (!t.active) return null;
+                    return (
+                        <path 
+                            key={t.key}
+                            d={getPath(t.key)}
+                            fill="none"
+                            stroke={t.color}
+                            strokeWidth="1.5"
+                            strokeLinejoin="round"
+                        />
                     );
                 })}
 
-                <line x1={pad} y1={svgH - pad} x2={svgW - pad} y2={svgH - pad} stroke="#ccc" />
-                <line x1={pad} y1={pad} x2={pad} y2={svgH - pad} stroke="#ccc" />
-                
-                <path 
-                    d={`M ${chartData.points.map(p => `${scaleX(p.x)},${scaleY(p.y)}`).join(' L ')}`}
-                    fill="none"
-                    stroke="#0078d7"
-                    strokeWidth="2"
-                    strokeLinejoin="round"
-                />
-
-                <path 
-                    d={`M ${scaleX(0)},${scaleY(0)} L ${chartData.points.map(p => `${scaleX(p.x)},${scaleY(p.y)}`).join(' L ')} L ${scaleX(chartData.totalTime)},${scaleY(0)} Z`}
-                    fill="#0078d7"
-                    fillOpacity="0.1"
-                />
-
-                {chartData.points.map((p, i) => (
-                    <circle 
-                        key={i} 
-                        cx={scaleX(p.x)} 
-                        cy={scaleY(p.y)} 
-                        r="3" 
-                        fill="white" 
-                        stroke="#0078d7" 
-                        strokeWidth="1.5"
-                    />
-                ))}
-
-                <text x={svgW / 2} y={svgH - 10} textAnchor="middle" fontSize="10" fill="#666">Time (s)</text>
-                <text x={15} y={svgH / 2} textAnchor="middle" fontSize="10" fill="#666" transform={`rotate(-90, 15, ${svgH/2})`}>Velocity</text>
+                <text x={svgW / 2} y={svgH - 5} textAnchor="middle" fontSize="10" fill="#666">Time (s)</text>
             </svg>
          </div>
 
-         <div className="h-6 bg-gray-50 border-t border-gray-200 flex items-center px-4 justify-between text-[10px] text-gray-500">
-             <span>Cycle Time: <b>{chartData.totalTime.toFixed(3)} s</b></span>
-             <span>Max Vel: <b>{chartData.maxVel.toFixed(1)}</b></span>
+         {/* Analyzer Table */}
+         <div className="h-32 bg-gray-50 border-t border-gray-300 flex flex-col shrink-0">
+             <div className="px-2 py-1 bg-gray-100 border-b border-gray-200 text-[10px] font-bold text-gray-600 uppercase flex justify-between items-center">
+                 <span>Analyzer</span>
+                 <RefreshCw size={10} className="cursor-pointer hover:text-blue-600" />
+             </div>
+             <div className="flex-1 overflow-auto">
+                 <table className="w-full text-right text-[10px] border-collapse">
+                    <thead className="bg-gray-100 text-gray-500 sticky top-0">
+                        <tr>
+                            <th className="p-1 text-left pl-3 font-semibold">Trace</th>
+                            <th className="p-1 font-semibold">Min</th>
+                            <th className="p-1 font-semibold">Max</th>
+                            <th className="p-1 font-semibold">Avg</th>
+                            <th className="p-1 font-semibold pr-3">RMS</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                        {traces.map(t => {
+                            if (!t.active) return null;
+                            const stat = analysis[t.key];
+                            return (
+                                <tr key={t.key} className="bg-white hover:bg-blue-50">
+                                    <td className="p-1 text-left pl-3 border-l-4" style={{ borderLeftColor: t.color }}>
+                                        {t.label} <span className="text-gray-400">({t.unit})</span>
+                                    </td>
+                                    <td className="p-1">{stat.min.toFixed(2)}</td>
+                                    <td className="p-1">{stat.max.toFixed(2)}</td>
+                                    <td className="p-1">{stat.avg.toFixed(2)}</td>
+                                    <td className="p-1 pr-3">{stat.rms.toFixed(2)}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                 </table>
+             </div>
          </div>
       </div>
     </div>
