@@ -435,16 +435,18 @@ export const ProfileEditor: React.FC = () => {
 
   const handleGraphMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
+      // Correctly map screen X to SVG ViewBox X
+      // preserveAspectRatio="none" implies X and Y are scaled independently.
+      const scaleXFactor = svgW / rect.width;
+      const svgX = (e.clientX - rect.left) * scaleXFactor;
       
-      // Inverse Scale X
-      // x = padX + (t / totalTime) * (svgW - 2*padX)
-      // x - padX = (t / totalTime) * width
-      // t = ((x - padX) / width) * totalTime
+      // Inverse of scaleX function using SVG coordinates
+      // svgX = padX + (t / totalTime) * plotWidth
+      // t = ((svgX - padX) / plotWidth) * totalTime
       
       const plotWidth = svgW - 2 * padX;
-      const relativeX = x - padX;
-      let t = (relativeX / plotWidth) * totalTime;
+      const relativeX = svgX - padX;
+      let t = (relativeX / plotWidth) * (totalTime || 1);
       
       // Clamp
       t = Math.max(0, Math.min(totalTime, t));
