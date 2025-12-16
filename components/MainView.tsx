@@ -4,6 +4,7 @@ import { TreeNode } from '../types';
 import { motorCatalog, driveCatalog, gearboxCatalog } from '../catalogData';
 import { InertiaCalculatorModal } from './InertiaCalculatorModal';
 import { FrictionCalculatorModal } from './FrictionCalculatorModal';
+import { ProfileEditor } from './ProfileEditor';
 import { UnitType } from '../utils/unitConversion';
 import { UnitInput, InputGroup, Select } from './Common';
 
@@ -550,7 +551,7 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
       <div className="mt-4 p-2 border border-gray-300 bg-white">
           <div className="text-xs font-bold text-gray-500 mb-2">Thrust / Velocity Profile</div>
           <div className="h-32 bg-gray-50 flex items-center justify-center border border-gray-200 border-dashed text-gray-400 text-xs">
-             Chart Preview Area
+             Preview Available in Profile Tab
           </div>
       </div>
     </div>
@@ -887,7 +888,7 @@ export const WorkArea = ({ data, selectedNode, onUpdateNode }: { data: TreeNode[
         </div>
 
         <FormTabs 
-          tabs={['Data', 'Charts', 'Environment', 'Notes']} 
+          tabs={['Data', 'Motion Profile', 'Environment', 'Notes']} 
           activeTab={activeTab} 
           onTabClick={setActiveTab} 
         />
@@ -895,6 +896,10 @@ export const WorkArea = ({ data, selectedNode, onUpdateNode }: { data: TreeNode[
         <div className="flex-1 overflow-y-auto pr-2">
           {activeTab === 'Data' ? (
             renderFormContent()
+          ) : activeTab === 'Motion Profile' ? (
+            <div className="h-full flex flex-col">
+              <ProfileEditor />
+            </div>
           ) : (
             <div className="h-full flex items-center justify-center text-gray-400 text-xs italic border border-gray-200 border-dashed rounded bg-gray-50">
               {activeTab} view not implemented in this demo.
