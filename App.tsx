@@ -52,7 +52,14 @@ const App = () => {
     const updateRecursive = (nodes: TreeNode[]): TreeNode[] => {
       return nodes.map(node => {
         if (node.id === id) {
-          return { ...node, parameters: { ...node.parameters, ...newParams } };
+          const updatedNode = { ...node, parameters: { ...node.parameters, ...newParams } };
+          
+          // Synchronize Tree Label with axisName if it exists in the update
+          if (newParams.axisName !== undefined) {
+            updatedNode.label = newParams.axisName;
+          }
+          
+          return updatedNode;
         }
         if (node.children) {
           return { ...node, children: updateRecursive(node.children) };

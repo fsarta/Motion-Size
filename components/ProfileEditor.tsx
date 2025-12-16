@@ -88,7 +88,7 @@ const DetailRow = ({ label, children, locked, onToggleLock, disabledLock }: any)
   </div>
 );
 
-const ReadOnlyRow = ({ label, children }: { label: string, children: React.ReactNode }) => (
+const ReadOnlyRow = ({ label, children }: { label: string, children?: React.ReactNode }) => (
   <div className="flex items-center mb-2">
     <label className="w-16 text-right text-xs text-gray-600 mr-2">{label}</label>
     <div className="flex-1 min-w-0">
@@ -236,7 +236,7 @@ const processImportedData = (rawData: {t: number, pos: number}[], motorRatio: nu
         } else if (i === rawData.length - 1) {
            tempJ[i] = (tempA[i] - tempA[i-1]) / (rawData[i].t - rawData[i-1].t);
         } else {
-           tempJ[i] = (tempA[i+1] - tempA[i-1]) / (rawData[i+1].t - rawData[i-1].t);
+           tempJ[i] = (tempA[i+1] - tempA[i-1]) / (rawData[i+1].t - rawData[i+1].t - rawData[i-1].t);
         }
     }
 

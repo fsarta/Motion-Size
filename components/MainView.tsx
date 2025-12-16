@@ -486,7 +486,8 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
 
   const renderField = (field: FieldConfig) => {
     return (
-      <InputGroup key={field.key} label={field.label}>
+      <React.Fragment key={field.key}>
+      <InputGroup label={field.label}>
         <UnitInput 
           value={params[field.key]} 
           onChange={(val) => handleChange(field.key, val)}
@@ -495,6 +496,7 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
           onCalculatorClick={() => handleOpenCalculator(field.key)}
         />
       </InputGroup>
+      </React.Fragment>
     );
   };
 
@@ -847,11 +849,11 @@ export const WorkArea = ({ data, selectedNode, onUpdateNode }: { data: TreeNode[
     // We add a key to the component to force re-render when selectedNode changes, 
     // ensuring defaultValues are updated from the new params.
     switch (selectedNode.type) {
-      case 'group': return <PowerGroupForm key={selectedNode.id} params={params} onUpdate={handleNodeUpdate} />;
-      case 'mechanism': return <MechanismForm key={selectedNode.id} params={params} onUpdate={handleNodeUpdate} />;
-      case 'gearbox': return <GearboxForm key={selectedNode.id} params={params} onUpdate={handleNodeUpdate} />;
-      case 'motor_drive': return <MotorDriveForm key={selectedNode.id} params={params} onUpdate={handleNodeUpdate} />;
-      case 'axis': return <AxisForm key={selectedNode.id} params={params} onUpdate={handleNodeUpdate} />;
+      case 'group': return <React.Fragment key={selectedNode.id}><PowerGroupForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
+      case 'mechanism': return <React.Fragment key={selectedNode.id}><MechanismForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
+      case 'gearbox': return <React.Fragment key={selectedNode.id}><GearboxForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
+      case 'motor_drive': return <React.Fragment key={selectedNode.id}><MotorDriveForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
+      case 'axis': return <React.Fragment key={selectedNode.id}><AxisForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
       default: return <div className="text-gray-400 italic p-4">Select an item to configure</div>;
     }
   };
