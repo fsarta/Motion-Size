@@ -19,6 +19,31 @@ export const InputGroup = ({ label, children, className="" }: { label: string, c
   </div>
 );
 
+export const SectionHeader = ({ title, rightContent }: { title: string, rightContent?: React.ReactNode }) => (
+  <div className="flex justify-between items-end border-b border-gray-300 mb-2 pb-0.5 mt-3">
+    <div className="text-[11px] font-bold text-gray-800 uppercase tracking-wide">
+      {title}
+    </div>
+    {rightContent}
+  </div>
+);
+
+export const FormTabs = ({ tabs, activeTab, onTabClick }: { tabs: string[], activeTab: string, onTabClick: (t: string) => void }) => (
+  <div className="flex border-b border-gray-300 mb-3 bg-gray-100">
+    {tabs.map(tab => (
+      <div 
+        key={tab}
+        onClick={() => onTabClick(tab)}
+        className={`px-3 py-1.5 text-xs cursor-pointer border-r border-gray-300 hover:bg-gray-50
+          ${activeTab === tab ? 'bg-white font-bold border-t-2 border-t-blue-500 border-b-white translate-y-[1px]' : 'text-gray-600'}
+        `}
+      >
+        {tab}
+      </div>
+    ))}
+  </div>
+);
+
 export const Select = ({ value, options, onChange, className }: { value?: string | number, options: string[], onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void, className?: string }) => (
   <select 
     value={value} 
