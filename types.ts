@@ -10,6 +10,11 @@ export interface TreeNode {
   parameters?: Record<string, string | number | boolean>;
 }
 
+export interface CamTable {
+  id: string;
+  name: string;
+}
+
 export interface DriveData {
   id: number;
   efficiency: number;

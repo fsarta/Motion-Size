@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   File, FolderOpen, Save, Printer, Settings, 
   Activity, Play, StopCircle, Calculator, 
-  HelpCircle, Box, Zap, PlusSquare
+  HelpCircle, Box, Zap, PlusSquare, Table
 } from 'lucide-react';
 
 const MenuBar = () => (
@@ -36,9 +36,10 @@ const Separator = () => <div className="w-px h-10 bg-gray-300 mx-1"></div>;
 
 interface RibbonProps {
   onAddAxis?: () => void;
+  onOpenCamManager?: () => void;
 }
 
-export const Ribbon: React.FC<RibbonProps> = ({ onAddAxis }) => {
+export const Ribbon: React.FC<RibbonProps> = ({ onAddAxis, onOpenCamManager }) => {
   return (
     <div className="flex flex-col w-full bg-gray-50 border-b border-gray-300 shadow-sm shrink-0">
       <MenuBar />
@@ -52,6 +53,7 @@ export const Ribbon: React.FC<RibbonProps> = ({ onAddAxis }) => {
         
         <RibbonButton icon={<PlusSquare size={20} className="text-green-600" />} label="Add Axis" onClick={onAddAxis} />
         <RibbonButton icon={<Settings size={20} />} label="Manage Axes" />
+        <RibbonButton icon={<Table size={20} className="text-purple-600" />} label="Cam Tables" onClick={onOpenCamManager} />
         <RibbonButton icon={<Activity size={20} className="text-yellow-600" />} label="System Check" />
         <RibbonButton icon={<Box size={20} />} label="Project Notes" />
         <RibbonButton icon={<Calculator size={20} />} label="BOM" />

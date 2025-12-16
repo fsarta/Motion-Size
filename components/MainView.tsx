@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Zap, Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, Database, Gauge, Link as LinkIcon } from 'lucide-react';
-import { TreeNode } from '../types';
+import { TreeNode, CamTable } from '../types';
 import { motorCatalog, driveCatalog, gearboxCatalog } from '../catalogData';
 import { InertiaCalculatorModal } from './InertiaCalculatorModal';
 import { FrictionCalculatorModal } from './FrictionCalculatorModal';
@@ -783,12 +783,16 @@ const MotorDriveForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) 
   );
 };
 
-const AxisForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
+const AxisForm = ({ params, onUpdate, availableMasters, camTables }: { params: any, onUpdate: (p: any) => void, availableMasters: string[], camTables: CamTable[] }) => {
   const handleChange = (key: string, value: any) => {
     onUpdate({ [key]: value });
   };
 
   const isMasterFollower = params.profileType === 'Master/Follower' || params.profileType === 'Camming';
+
+  // Fallback if no masters
+  const masterOptions = ['Virtual Master', ...availableMasters];
+  const camOptions = camTables.map(c => c.name);
 
   return (
     <div>
@@ -815,7 +819,7 @@ const AxisForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => voi
           <div>
              <SectionHeader title="Master Configuration" rightContent={<LinkIcon size={12} className="text-blue-600"/>} />
              <InputGroup label="Master Axis">
-                <Select value={params.masterAxis || 'Virtual Master'} options={['Virtual Master', 'Axis 1', 'Axis 2 (Ext)']} onChange={(e) => handleChange('masterAxis', e.target.value)} />
+                <Select value={params.masterAxis || 'Virtual Master'} options={masterOptions} onChange={(e) => handleChange('masterAxis', e.target.value)} />
              </InputGroup>
              
              {params.profileType === 'Master/Follower' && (
@@ -840,7 +844,11 @@ const AxisForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => voi
 
              {params.profileType === 'Camming' && (
                 <InputGroup label="Cam Table ID">
-                   <Select value={params.camTableId || 'Cam_1'} options={['Cam_1', 'Cam_2', 'RotaryShear_3']} onChange={(e) => handleChange('camTableId', e.target.value)} />
+                   <Select 
+                      value={params.camTableId || (camOptions[0] ?? '')} 
+                      options={camOptions} 
+                      onChange={(e) => handleChange('camTableId', e.target.value)} 
+                   />
                 </InputGroup>
              )}
           </div>
@@ -867,7 +875,17 @@ const AxisForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => voi
 
 /* --- Main Form Container --- */
 
-export const WorkArea = ({ data, selectedNode, onUpdateNode }: { data: TreeNode[], selectedNode: TreeNode | undefined, onUpdateNode: (id: string, params: any) => void }) => {
+export const WorkArea = ({ 
+  data, 
+  selectedNode, 
+  onUpdateNode,
+  camTables
+}: { 
+  data: TreeNode[], 
+  selectedNode: TreeNode | undefined, 
+  onUpdateNode: (id: string, params: any) => void,
+  camTables: CamTable[]
+}) => {
   // Safe check
   if (!selectedNode) {
       return (
@@ -904,6 +922,30 @@ export const WorkArea = ({ data, selectedNode, onUpdateNode }: { data: TreeNode[
 
   const axes = activeGroup?.children?.filter(n => n.icon === 'axis') || [];
   
+  // -- Calculate Available Masters --
+  // Traverse entire tree to find all axes.
+  // Format: "GroupName > AxisName"
+  const availableMasters = useMemo(() => {
+     const masters: string[] = [];
+     
+     const traverse = (nodes: TreeNode[], groupName: string) => {
+        nodes.forEach(node => {
+            if (node.type === 'group') {
+               traverse(node.children || [], node.label);
+            } else if (node.type === 'axis') {
+               // Exclude self if selected
+               if (node.id !== selectedNode.id) {
+                   masters.push(`${groupName} > ${node.label}`);
+               }
+            }
+        });
+     };
+
+     traverse(data, "");
+     return masters;
+  }, [data, selectedNode.id]);
+
+  
   const [activeTab, setActiveTab] = useState('Data');
 
   const params = selectedNode.parameters || {};
@@ -921,7 +963,7 @@ export const WorkArea = ({ data, selectedNode, onUpdateNode }: { data: TreeNode[
       case 'mechanism': return <React.Fragment key={selectedNode.id}><MechanismForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
       case 'gearbox': return <React.Fragment key={selectedNode.id}><GearboxForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
       case 'motor_drive': return <React.Fragment key={selectedNode.id}><MotorDriveForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
-      case 'axis': return <React.Fragment key={selectedNode.id}><AxisForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
+      case 'axis': return <React.Fragment key={selectedNode.id}><AxisForm params={params} onUpdate={handleNodeUpdate} availableMasters={availableMasters} camTables={camTables} /></React.Fragment>;
       default: return <div className="text-gray-400 italic p-4">Select an item to configure</div>;
     }
   };
