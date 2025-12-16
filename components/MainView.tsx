@@ -806,6 +806,7 @@ const AxisForm = ({ params, onUpdate, availableMasters, camTables }: { params: a
             <input 
               type="text" 
               className="w-full text-xs border border-gray-300 px-1 h-6 bg-white text-gray-900" 
+              style={{ backgroundColor: '#ffffff', color: '#111827' }}
               value={params.axisName} 
               onChange={(e) => handleChange('axisName', e.target.value)} 
             />
@@ -827,14 +828,16 @@ const AxisForm = ({ params, onUpdate, availableMasters, camTables }: { params: a
                  <div className="flex items-center space-x-2">
                     <input 
                       type="number" 
-                      className="w-12 h-6 border border-gray-300 px-1 text-right text-xs" 
+                      className="w-12 h-6 border border-gray-300 px-1 text-right text-xs bg-white text-gray-900"
+                      style={{ backgroundColor: '#ffffff', color: '#111827' }} 
                       value={params.gearRatioNum || 1} 
                       onChange={(e) => handleChange('gearRatioNum', e.target.value)}
                     />
                     <span>:</span>
                     <input 
                       type="number" 
-                      className="w-12 h-6 border border-gray-300 px-1 text-right text-xs" 
+                      className="w-12 h-6 border border-gray-300 px-1 text-right text-xs bg-white text-gray-900" 
+                      style={{ backgroundColor: '#ffffff', color: '#111827' }}
                       value={params.gearRatioDen || 1} 
                       onChange={(e) => handleChange('gearRatioDen', e.target.value)}
                     />

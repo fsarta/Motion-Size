@@ -82,7 +82,8 @@ const CamTableManagerModal = ({ isOpen, onClose, camTables, onAdd, onDelete }: {
           <div className="p-2 border-b border-gray-300 bg-gray-50 flex space-x-2">
              <input 
                type="text" 
-               className="flex-1 border border-gray-300 px-2 py-1 outline-none focus:border-blue-500"
+               className="flex-1 border border-gray-300 px-2 py-1 outline-none focus:border-blue-500 bg-white text-gray-900"
+               style={{ backgroundColor: '#ffffff', color: '#111827' }}
                placeholder="New Table Name..."
                value={newName}
                onChange={(e) => setNewName(e.target.value)}
