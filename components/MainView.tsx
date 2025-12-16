@@ -1,15 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Zap, Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, List, Database, Gauge, Scale, Calculator } from 'lucide-react';
+import { Zap, Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, Database, Gauge } from 'lucide-react';
 import { TreeNode } from '../types';
 import { motorCatalog, driveCatalog, gearboxCatalog } from '../catalogData';
 import { InertiaCalculatorModal } from './InertiaCalculatorModal';
-import { 
-  toDisplay, 
-  toBase, 
-  getDefaultUnit, 
-  getUnitsForType, 
-  UnitType 
-} from '../utils/unitConversion';
+import { UnitType } from '../utils/unitConversion';
+import { UnitInput, InputGroup, Select } from './Common';
 
 /* --- Visualization Components --- */
 
@@ -157,114 +152,6 @@ const Visualizer = ({ axes }: { axes: TreeNode[] }) => {
     </div>
   );
 };
-
-/* --- Form Components --- */
-
-const InputGroup = ({ label, children, className="" }: { label: string, children?: React.ReactNode, className?: string }) => (
-  <div className={`flex items-center mb-1.5 ${className}`}>
-    <div className="w-32 text-xs text-win-blue font-medium truncate pr-2 flex items-center text-right justify-end shrink-0">
-        {label}
-    </div>
-    <div className="flex-1 flex items-center min-w-0">
-      {children}
-    </div>
-  </div>
-);
-
-const Select = ({ value, options, onChange }: { value?: string | number, options: string[], onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void }) => (
-  <select 
-    value={value} 
-    onChange={onChange}
-    className="w-full text-xs border border-gray-300 bg-white px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6"
-  >
-    {options.map(o => <option key={o} value={o}>{o}</option>)}
-  </select>
-);
-
-// Advanced Input that handles Unit Selection and Auto-Conversion
-const UnitInput = ({ 
-  value, 
-  onChange, 
-  type, 
-  readOnly,
-  hasCalculator,
-  onCalculatorClick
-}: { 
-  value: string | number | undefined, 
-  onChange: (val: string) => void, 
-  type: UnitType, 
-  readOnly?: boolean,
-  hasCalculator?: boolean,
-  onCalculatorClick?: () => void
-}) => {
-  const [currentUnit, setCurrentUnit] = useState<string>(() => getDefaultUnit(type));
-  const availableUnits = getUnitsForType(type);
-
-  // Derived state for display
-  const displayValue = useMemo(() => {
-    return toDisplay(value, type, currentUnit);
-  }, [value, type, currentUnit]);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Convert entered display value back to base unit for storage
-    const newVal = toBase(e.target.value, type, currentUnit);
-    onChange(newVal);
-  };
-
-  const handleUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newUnit = e.target.value;
-    setCurrentUnit(newUnit);
-    // Value in store doesn't change, only display value re-renders
-  };
-
-  return (
-    <div className="flex w-full items-center">
-      <div className="relative flex-1 flex items-center">
-        <input 
-          type="text" 
-          value={displayValue} 
-          onChange={handleInputChange}
-          readOnly={readOnly}
-          className={`w-full min-w-0 text-right text-xs border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} 
-        />
-        {hasCalculator && (
-          <div className="absolute right-0 top-0 bottom-0 flex items-center pr-1 pointer-events-none">
-             {/* Visual indicator only for this demo */}
-          </div>
-        )}
-      </div>
-      {hasCalculator && (
-        <button 
-          onClick={onCalculatorClick}
-          className="ml-0.5 p-0.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-sm" 
-          title="Open Calculator"
-        >
-           <Calculator size={12} className="text-gray-600"/>
-        </button>
-      )}
-      {availableUnits.length > 0 && (
-        <select 
-          value={currentUnit} 
-          onChange={handleUnitChange}
-          disabled={readOnly && availableUnits.length < 2}
-          className="ml-1 w-14 text-[10px] border border-gray-300 bg-gray-50 py-0.5 h-6 focus:outline-none text-gray-700 shrink-0"
-        >
-          {availableUnits.map(u => <option key={u} value={u}>{u}</option>)}
-        </select>
-      )}
-    </div>
-  );
-};
-
-const NumberInput = ({ value, onChange, className = "w-full", readOnly }: { value?: string | number, onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void, className?: string, readOnly?: boolean }) => (
-  <input 
-    type="text" 
-    value={value} 
-    onChange={onChange}
-    readOnly={readOnly}
-    className={`${className} text-right text-xs border border-gray-300 bg-white px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`} 
-  />
-);
 
 const SectionHeader = ({ title, rightContent }: { title: string, rightContent?: React.ReactNode }) => (
   <div className="flex justify-between items-end border-b border-gray-300 mb-2 pb-0.5 mt-3">
@@ -590,10 +477,6 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
 
   const handleCalculatorAccept = (value: string) => {
     if (calculatorField) {
-      // The Calculator component returns Base Unit (kg m2).
-      // We store it directly as our app state assumes base units usually, 
-      // or we rely on the UnitInput to convert it for display if needed.
-      // However, UnitInput expects base units in `value` prop.
       handleChange(calculatorField, value);
       setCalculatorField(null);
     }
