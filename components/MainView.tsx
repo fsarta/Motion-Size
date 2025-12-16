@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Zap, Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, List, Database, Gauge, Scale } from 'lucide-react';
+import { Zap, Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, List, Database, Gauge, Scale, Calculator } from 'lucide-react';
 import { TreeNode } from '../types';
 import { motorCatalog, driveCatalog, gearboxCatalog } from '../catalogData';
 import { 
@@ -161,7 +161,7 @@ const Visualizer = ({ axes }: { axes: TreeNode[] }) => {
 
 const InputGroup = ({ label, children, className="" }: { label: string, children?: React.ReactNode, className?: string }) => (
   <div className={`flex items-center mb-1.5 ${className}`}>
-    <div className="w-40 text-xs text-win-blue font-medium truncate pr-2 flex items-center text-right justify-end shrink-0">
+    <div className="w-32 text-xs text-win-blue font-medium truncate pr-2 flex items-center text-right justify-end shrink-0">
         {label}
     </div>
     <div className="flex-1 flex items-center min-w-0">
@@ -185,12 +185,14 @@ const UnitInput = ({
   value, 
   onChange, 
   type, 
-  readOnly 
+  readOnly,
+  hasCalculator
 }: { 
   value: string | number | undefined, 
   onChange: (val: string) => void, 
   type: UnitType, 
-  readOnly?: boolean 
+  readOnly?: boolean,
+  hasCalculator?: boolean
 }) => {
   const [currentUnit, setCurrentUnit] = useState<string>(() => getDefaultUnit(type));
   const availableUnits = getUnitsForType(type);
@@ -214,19 +216,31 @@ const UnitInput = ({
 
   return (
     <div className="flex w-full items-center">
-      <input 
-        type="text" 
-        value={displayValue} 
-        onChange={handleInputChange}
-        readOnly={readOnly}
-        className={`flex-1 min-w-0 text-right text-xs border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} 
-      />
+      <div className="relative flex-1 flex items-center">
+        <input 
+          type="text" 
+          value={displayValue} 
+          onChange={handleInputChange}
+          readOnly={readOnly}
+          className={`w-full min-w-0 text-right text-xs border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} 
+        />
+        {hasCalculator && (
+          <div className="absolute right-0 top-0 bottom-0 flex items-center pr-1 pointer-events-none">
+             {/* Visual indicator only for this demo */}
+          </div>
+        )}
+      </div>
+      {hasCalculator && (
+        <button className="ml-0.5 p-0.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-sm" title="Open Calculator">
+           <Calculator size={12} className="text-gray-600"/>
+        </button>
+      )}
       {availableUnits.length > 0 && (
         <select 
           value={currentUnit} 
           onChange={handleUnitChange}
           disabled={readOnly && availableUnits.length < 2}
-          className="ml-1 w-16 text-[10px] border border-gray-300 bg-gray-50 py-0.5 h-6 focus:outline-none text-gray-700"
+          className="ml-1 w-14 text-[10px] border border-gray-300 bg-gray-50 py-0.5 h-6 focus:outline-none text-gray-700 shrink-0"
         >
           {availableUnits.map(u => <option key={u} value={u}>{u}</option>)}
         </select>
@@ -246,8 +260,8 @@ const NumberInput = ({ value, onChange, className = "w-full", readOnly }: { valu
 );
 
 const SectionHeader = ({ title, rightContent }: { title: string, rightContent?: React.ReactNode }) => (
-  <div className="flex justify-between items-end border-b border-gray-300 mb-3 pb-1 mt-2">
-    <div className="text-xs font-bold text-gray-700">
+  <div className="flex justify-between items-end border-b border-gray-300 mb-2 pb-0.5 mt-3">
+    <div className="text-[11px] font-bold text-gray-800 uppercase tracking-wide">
       {title}
     </div>
     {rightContent}
@@ -324,88 +338,239 @@ type FieldConfig = {
   key: string;
   label: string;
   unitType: UnitType;
+  hasCalculator?: boolean;
 };
 
-const MECHANISM_CONFIG: Record<string, FieldConfig[]> = {
-  'Conveyor': [
-    { key: 'massLoad', label: 'Mass of Load', unitType: 'mass' },
-    { key: 'massBelt', label: 'Mass of Belt', unitType: 'mass' },
-    { key: 'pulleyRadius', label: 'Drive Pulley Radius', unitType: 'length' },
-    { key: 'frictionCoeff', label: 'Friction Coeff', unitType: 'factor' },
-    { key: 'inclineAngle', label: 'Incline Angle', unitType: 'angle' },
-    { key: 'additionalForce', label: 'Thrust / Friction', unitType: 'force' },
-  ],
+type MechanismSection = {
+  section: string;
+  fields: FieldConfig[];
+};
+
+const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
   'Ball Screw': [
-    { key: 'massLoad', label: 'Mass of Load', unitType: 'mass' },
-    { key: 'massTable', label: 'Mass of Table', unitType: 'mass' },
-    { key: 'screwLead', label: 'Screw Lead', unitType: 'length' },
-    { key: 'screwDiameter', label: 'Screw Diameter', unitType: 'length' },
-    { key: 'screwLength', label: 'Screw Length', unitType: 'length' },
-    { key: 'frictionCoeff', label: 'Friction Coeff', unitType: 'factor' },
-    { key: 'inclineAngle', label: 'Incline Angle', unitType: 'angle' },
-    { key: 'additionalForce', label: 'Process Force', unitType: 'force' },
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
+        { key: 'externalForce', label: 'External Force', unitType: 'force' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
+        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
+      ]
+    },
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'screwLead', label: 'Lead', unitType: 'length' },
+        { key: 'slideMass', label: 'Slide Mass', unitType: 'mass' },
+        { key: 'screwInertia', label: 'Ball Screw Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    },
+    {
+      section: 'Related Transmission',
+      fields: [
+        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
+        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
+        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
+        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    }
   ],
-  'Rack & Pinion': [
-    { key: 'massLoad', label: 'Mass of Load', unitType: 'mass' },
-    { key: 'massCarriage', label: 'Mass of Carriage', unitType: 'mass' },
-    { key: 'pinionRadius', label: 'Pinion Radius', unitType: 'length' },
-    { key: 'frictionCoeff', label: 'Friction Coeff', unitType: 'factor' },
-    { key: 'inclineAngle', label: 'Incline Angle', unitType: 'angle' },
-    { key: 'additionalForce', label: 'Process Force', unitType: 'force' },
+  'Belt': [
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
+        { key: 'externalForce', label: 'External Force', unitType: 'force' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
+        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
+      ]
+    },
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'driverDiameter', label: 'Driver Pitch Dia.', unitType: 'length' },
+        { key: 'beltMass', label: 'Belt Mass', unitType: 'mass' },
+        { key: 'driverInertia', label: 'Driver/Idler Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    },
+    {
+      section: 'Related Transmission',
+      fields: [
+        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
+        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
+        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
+        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    }
   ],
-  'Rotary Table': [
-    { key: 'loadInertia', label: 'Load Inertia', unitType: 'inertia' },
-    { key: 'tableInertia', label: 'Table Inertia', unitType: 'inertia' },
-    { key: 'frictionTorque', label: 'Friction Torque', unitType: 'torque' },
-    { key: 'disturbTorque', label: 'Disturbance Torque', unitType: 'torque' },
+  'Chain and Sprocket': [
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
+        { key: 'externalForce', label: 'External Force', unitType: 'force' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
+        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
+      ]
+    },
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'sprocketPCD', label: 'Sprocket PCD', unitType: 'length' },
+        { key: 'chainMass', label: 'Chain Mass', unitType: 'mass' },
+        { key: 'sprocketInertia', label: 'Sprocket/Idler Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    },
+    {
+      section: 'Related Transmission',
+      fields: [
+        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
+        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
+        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
+        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    }
   ],
-  'Chain Drive': [
-    { key: 'massLoad', label: 'Mass of Load', unitType: 'mass' },
-    { key: 'massChain', label: 'Mass of Chain', unitType: 'mass' },
-    { key: 'sprocketRadius', label: 'Sprocket Radius', unitType: 'length' },
-    { key: 'frictionCoeff', label: 'Friction Coeff', unitType: 'factor' },
-    { key: 'inclineAngle', label: 'Incline Angle', unitType: 'angle' },
-    { key: 'additionalForce', label: 'Thrust Force', unitType: 'force' },
+  'Rack and Pinion': [
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
+        { key: 'externalForce', label: 'External Force', unitType: 'force' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
+        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
+      ]
+    },
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'pinionPCD', label: 'Pinion PCD', unitType: 'length' },
+        { key: 'rackMass', label: 'Rack Mass', unitType: 'mass' },
+        { key: 'pinionInertia', label: 'Pinion Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    },
+    {
+      section: 'Related Transmission',
+      fields: [
+        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
+        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
+        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
+        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    }
+  ],
+  'Roll Feeder': [
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'pressForce', label: 'Press Force', unitType: 'force' },
+        { key: 'tensionForce', label: 'Tension Force', unitType: 'force' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
+        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
+      ]
+    },
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'drivingRollerDiameter', label: 'Driving Roller Dia.', unitType: 'length' },
+        { key: 'drivingInertia', label: 'Driving Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'drivenInertia', label: 'Driven Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    },
+    {
+      section: 'Related Transmission',
+      fields: [
+        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
+        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
+        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
+        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    }
   ],
   'Linear Motor': [
-     { key: 'movingMass', label: 'Moving Mass', unitType: 'mass' },
-     { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
-     { key: 'processForce', label: 'Process Force', unitType: 'force' },
-     { key: 'inclineAngle', label: 'Incline Angle', unitType: 'angle' },
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
+        { key: 'externalForce', label: 'External Force', unitType: 'force' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
+        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
+      ]
+    },
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'forceMargin', label: 'Force Margin', unitType: 'force' },
+        { key: 'slideMass', label: 'Slide Mass', unitType: 'mass' },
+      ]
+    }
   ],
-  'Roller Feed': [
-    { key: 'rollInertia', label: 'Roll Inertia (Total)', unitType: 'inertia' },
-    { key: 'rollRadius', label: 'Roll Radius', unitType: 'length' },
-    { key: 'materialMass', label: 'Material Mass', unitType: 'mass' },
-    { key: 'frictionTorque', label: 'Friction Torque', unitType: 'torque' },
-    { key: 'tensionForce', label: 'Web Tension', unitType: 'force' },
+  'Rotation Table': [
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'rotatingInertia', label: 'Rotating Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'externalTorque', label: 'External Torque', unitType: 'torque' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
+        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+      ]
+    },
+    {
+      section: 'Related Transmission',
+      fields: [
+        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
+        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
+        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
+        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    }
   ],
-  'Winder': [
-    { key: 'minDiameter', label: 'Min Diameter', unitType: 'length' },
-    { key: 'maxDiameter', label: 'Max Diameter', unitType: 'length' },
-    { key: 'webWidth', label: 'Web Width', unitType: 'length' },
-    { key: 'density', label: 'Material Density', unitType: 'density' },
-    { key: 'frictionTorque', label: 'Friction Torque', unitType: 'torque' },
-    { key: 'webTension', label: 'Web Tension', unitType: 'force' },
-  ],
-  'Slider Crank': [
-    { key: 'sliderMass', label: 'Slider Mass', unitType: 'mass' },
-    { key: 'crankRadius', label: 'Crank Radius', unitType: 'length' },
-    { key: 'rodLength', label: 'Connecting Rod Length', unitType: 'length' },
-    { key: 'frictionCoeff', label: 'Friction Coeff', unitType: 'factor' },
-    { key: 'processForce', label: 'Slider Force', unitType: 'force' },
-  ],
-  'User Defined': [
-    { key: 'totalInertia', label: 'Total Inertia', unitType: 'inertia' },
-    { key: 'totalMass', label: 'Total Mass', unitType: 'mass' },
-    { key: 'externalTorque', label: 'External Torque', unitType: 'torque' },
-    { key: 'externalForce', label: 'External Force', unitType: 'force' },
+  'Crank': [
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
+        { key: 'externalForce', label: 'External Force', unitType: 'force' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
+        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
+      ]
+    },
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'crankRadius', label: 'Crank Radius', unitType: 'length' },
+        { key: 'rodLength', label: 'Connecting Rod Length', unitType: 'length' },
+        { key: 'crankInertia', label: 'Crank Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    },
+    {
+      section: 'Related Transmission',
+      fields: [
+        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
+        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
+        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
+        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    }
   ]
 };
 
 const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
-  const mechType = params.mechanismType || 'Conveyor';
-  const fields = MECHANISM_CONFIG[mechType] || [];
+  const mechType = params.mechanismType || 'Ball Screw';
+  const sections = MECHANISM_CONFIG[mechType] || [];
 
   const handleChange = (key: string, value: any) => {
     onUpdate({ [key]: value });
@@ -418,15 +583,24 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
           value={params[field.key]} 
           onChange={(val) => handleChange(field.key, val)}
           type={field.unitType}
+          hasCalculator={field.hasCalculator}
         />
       </InputGroup>
     );
   };
 
-  // Split fields into two columns
-  const half = Math.ceil(fields.length / 2);
-  const leftFields = fields.slice(0, half);
-  const rightFields = fields.slice(half);
+  const renderSection = (sectionData: MechanismSection) => (
+    <div key={sectionData.section} className="mb-4">
+      <SectionHeader title={sectionData.section} />
+      {sectionData.fields.map(renderField)}
+    </div>
+  );
+
+  // Group sections for 2-column layout
+  // Column 1: Load
+  // Column 2: Mechanism + Transmission
+  const loadSection = sections.find(s => s.section === 'Regarding Load');
+  const otherSections = sections.filter(s => s.section !== 'Regarding Load');
 
   return (
     <div className="relative">
@@ -439,12 +613,12 @@ const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) =
               onChange={(e) => handleChange('mechanismType', e.target.value)} 
             />
           </InputGroup>
-          {leftFields.map(renderField)}
+          {loadSection && renderSection(loadSection)}
         </div>
         <div>
           {/* Spacer to align with Mechanism Type dropdown on the left */}
           <div className="h-[26px] mb-1.5"></div> 
-          {rightFields.map(renderField)}
+          {otherSections.map(renderSection)}
         </div>
       </div>
       <div className="mt-4 p-2 border border-gray-300 bg-white">
