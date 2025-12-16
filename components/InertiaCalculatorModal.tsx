@@ -5,7 +5,7 @@ import { UnitInput, InputGroup, Select } from './Common';
 interface InertiaComponent {
   id: string;
   name: string;
-  type: 'Solid Cylinder' | 'Hollow Cylinder' | 'Cuboid' | 'User Spec.';
+  type: 'Solid Cylinder' | 'Hollow Cylinder' | 'Cuboid' | 'Solid Sphere' | 'Hollow Sphere' | 'Solid Cone' | 'User Spec.';
   quantity: number;
   ratio: number;
   mass: number; // kg (Base unit)
@@ -99,6 +99,16 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
       vol_m3 = Math.PI * (Math.pow(r_out, 2) - Math.pow(r_in, 2)) * h_m;
     } else if (comp.type === 'Cuboid') {
       vol_m3 = w_m * l_m * h_m;
+    } else if (comp.type === 'Solid Sphere') {
+      const radius = d1_m / 2;
+      vol_m3 = (4/3) * Math.PI * Math.pow(radius, 3);
+    } else if (comp.type === 'Hollow Sphere') {
+      const r_out = d1_m / 2;
+      const r_in = d2_m / 2;
+      vol_m3 = (4/3) * Math.PI * (Math.pow(r_out, 3) - Math.pow(r_in, 3));
+    } else if (comp.type === 'Solid Cone') {
+      const radius = d1_m / 2;
+      vol_m3 = (1/3) * Math.PI * Math.pow(radius, 2) * h_m;
     }
 
     // 3. Calculate Mass (kg)
@@ -116,6 +126,23 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
     } else if (comp.type === 'Cuboid') {
        // Rotating around axis parallel to H (so using L and W)
        I_cm_si = (mass * (Math.pow(l_m, 2) + Math.pow(w_m, 2))) / 12;
+    } else if (comp.type === 'Solid Sphere') {
+      const radius = d1_m / 2;
+      I_cm_si = (2/5) * mass * Math.pow(radius, 2);
+    } else if (comp.type === 'Hollow Sphere') {
+      const r_out = d1_m / 2;
+      const r_in = d2_m / 2;
+      // I = 2/5 * M * (R^5 - r^5) / (R^3 - r^3)
+      const num = Math.pow(r_out, 5) - Math.pow(r_in, 5);
+      const den = Math.pow(r_out, 3) - Math.pow(r_in, 3);
+      // Avoid division by zero
+      if (den > 0) {
+        I_cm_si = (2/5) * mass * (num / den);
+      }
+    } else if (comp.type === 'Solid Cone') {
+      const radius = d1_m / 2;
+      // Around central axis
+      I_cm_si = (3/10) * mass * Math.pow(radius, 2);
     }
 
     // 5. Parallel Axis Theorem & Transmission (kg*m^2)
@@ -168,6 +195,7 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
              const d2_m = updated.d2 / 1000;
              const l_m = updated.l / 1000; 
              const w_m = updated.w / 1000;
+             const h_m = updated.h / 1000;
              
              let I_cm_si = 0;
              if (updated.type === 'Solid Cylinder') {
@@ -176,7 +204,17 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
                 I_cm_si = 0.5 * m * (Math.pow(d1_m/2, 2) + Math.pow(d2_m/2, 2));
              } else if (updated.type === 'Cuboid') {
                 I_cm_si = (m * (Math.pow(l_m, 2) + Math.pow(w_m, 2))) / 12;
+             } else if (updated.type === 'Solid Sphere') {
+                I_cm_si = (2/5) * m * Math.pow(d1_m/2, 2);
+             } else if (updated.type === 'Hollow Sphere') {
+                const r_out = d1_m/2; const r_in = d2_m/2;
+                const num = Math.pow(r_out, 5) - Math.pow(r_in, 5);
+                const den = Math.pow(r_out, 3) - Math.pow(r_in, 3);
+                I_cm_si = (2/5) * m * (den > 0 ? num/den : 0);
+             } else if (updated.type === 'Solid Cone') {
+                I_cm_si = (3/10) * m * Math.pow(d1_m/2, 2);
              }
+
              const I_total_si = (I_cm_si + m * Math.pow(r_offset_m, 2)) * updated.quantity * Math.pow(updated.ratio, 2);
              updated.inertia = I_total_si * 10000;
              // Also back-calculate volume if possible? 
@@ -208,7 +246,7 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-[1px]">
-      <div className="bg-win-bg w-[900px] h-[650px] shadow-2xl border border-gray-400 flex flex-col text-xs font-sans">
+      <div className="bg-win-bg w-[900px] h-[750px] shadow-2xl border border-gray-400 flex flex-col text-xs font-sans">
         {/* Window Header */}
         <div className="h-8 bg-gradient-to-r from-gray-100 to-gray-200 border-b border-gray-300 flex items-center justify-between px-2 select-none">
           <div className="font-bold text-gray-700 pl-2">
@@ -260,6 +298,9 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
                      <option>Solid Cylinder</option>
                      <option>Hollow Cylinder</option>
                      <option>Cuboid</option>
+                     <option>Solid Sphere</option>
+                     <option>Hollow Sphere</option>
+                     <option>Solid Cone</option>
                      <option>User Spec.</option>
                    </select>
                  </div>
@@ -308,15 +349,15 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
            <div className="flex space-x-6">
               <div className="flex items-center space-x-2">
                  <span className="font-semibold text-gray-600">Overall Volume:</span>
-                 <div className="w-24"><UnitInput value={totalVolume} onChange={()=>{}} type="volume" readOnly /></div>
+                 <div className="w-40"><UnitInput value={totalVolume} onChange={()=>{}} type="volume" readOnly /></div>
               </div>
               <div className="flex items-center space-x-2">
                  <span className="font-semibold text-gray-600">Overall Mass:</span>
-                 <div className="w-24"><UnitInput value={totalMass} onChange={()=>{}} type="mass" readOnly /></div>
+                 <div className="w-40"><UnitInput value={totalMass} onChange={()=>{}} type="mass" readOnly /></div>
               </div>
               <div className="flex items-center space-x-2">
                  <span className="font-semibold text-win-blue">Overall Inertia:</span>
-                 <div className="w-28 bg-white border border-blue-300 shadow-sm"><UnitInput value={totalInertia} onChange={()=>{}} type="inertia" readOnly /></div>
+                 <div className="w-48 bg-white border border-blue-300 shadow-sm"><UnitInput value={totalInertia} onChange={()=>{}} type="inertia" readOnly /></div>
               </div>
            </div>
         </div>
@@ -330,17 +371,23 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
               <div className="mb-4">
                 <h4 className="font-bold text-gray-700 mb-2 border-b border-gray-300 pb-0.5">Properties</h4>
                 <div className="space-y-2 pl-2">
-                   <InputGroup label="Height [H]">
-                      <UnitInput type="length" value={selectedComp.h} onChange={(val) => updateComponent(selectedComp.id, 'h', val)} />
-                   </InputGroup>
                    
-                   {(selectedComp.type === 'Hollow Cylinder' || selectedComp.type === 'Solid Cylinder') && (
-                     <InputGroup label="Outer Diameter [D1]">
+                   {/* Height - Hidden for Spheres */}
+                   {selectedComp.type !== 'Solid Sphere' && selectedComp.type !== 'Hollow Sphere' && (
+                     <InputGroup label="Height [H]">
+                        <UnitInput type="length" value={selectedComp.h} onChange={(val) => updateComponent(selectedComp.id, 'h', val)} />
+                     </InputGroup>
+                   )}
+                   
+                   {/* D1 - Used for Cylinder, Hollow Cylinder, Spheres, Cone */}
+                   {(selectedComp.type === 'Hollow Cylinder' || selectedComp.type === 'Solid Cylinder' || selectedComp.type === 'Solid Sphere' || selectedComp.type === 'Hollow Sphere' || selectedComp.type === 'Solid Cone') && (
+                     <InputGroup label={selectedComp.type.includes('Cone') ? "Base Diameter [D1]" : "Outer Diameter [D1]"}>
                          <UnitInput type="length" value={selectedComp.d1} onChange={(val) => updateComponent(selectedComp.id, 'd1', val)} />
                      </InputGroup>
                    )}
 
-                   {selectedComp.type === 'Hollow Cylinder' && (
+                   {/* D2 - Used for Hollow types */}
+                   {(selectedComp.type === 'Hollow Cylinder' || selectedComp.type === 'Hollow Sphere') && (
                      <InputGroup label="Inner Diameter [D2]">
                          <UnitInput type="length" value={selectedComp.d2} onChange={(val) => updateComponent(selectedComp.id, 'd2', val)} />
                      </InputGroup>
@@ -414,6 +461,12 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
                    <span>I<sub>z</sub> = <span className="text-lg">(</span><div className="inline-block text-center align-middle"><div className="border-b border-black">m D<sub>1</sub><sup>2</sup></div><div>8</div></div> + mr<sup>2</sup><span className="text-lg">)</span> × Qty × Ratio<sup>2</sup></span>
                  ) : selectedComp.type === 'Cuboid' ? (
                    <span>I<sub>H</sub> = <span className="text-lg">(</span><div className="inline-block text-center align-middle"><div className="border-b border-black">m(L<sup>2</sup> + W<sup>2</sup>)</div><div>12</div></div> + mr<sup>2</sup><span className="text-lg">)</span> × Qty × Ratio<sup>2</sup></span>
+                 ) : selectedComp.type === 'Solid Sphere' ? (
+                   <span>I<sub>z</sub> = <span className="text-lg">(</span><div className="inline-block text-center align-middle"><div className="border-b border-black">2 m r<sup>2</sup></div><div>5</div></div> + mr<sup>2</sup><span className="text-lg">)</span> × Qty × Ratio<sup>2</sup></span>
+                 ) : selectedComp.type === 'Hollow Sphere' ? (
+                   <span>I<sub>z</sub> = <span className="text-lg">(</span><div className="inline-block text-center align-middle"><div className="border-b border-black">2m(R<sup>5</sup>-r<sup>5</sup>)</div><div>5(R<sup>3</sup>-r<sup>3</sup>)</div></div> + mr<sup>2</sup><span className="text-lg">)</span> × Qty × Ratio<sup>2</sup></span>
+                 ) : selectedComp.type === 'Solid Cone' ? (
+                   <span>I<sub>z</sub> = <span className="text-lg">(</span><div className="inline-block text-center align-middle"><div className="border-b border-black">3 m r<sup>2</sup></div><div>10</div></div> + mr<sup>2</sup><span className="text-lg">)</span> × Qty × Ratio<sup>2</sup></span>
                  ) : (
                    <span className="text-gray-400 text-sm">Formula unavailable for this shape</span>
                  )}
@@ -463,6 +516,40 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
                         <path d="M105,125 L110,120 M135,95 L130,100" stroke="black" />
                         <text x="125" y="125" fontSize="12">L</text>
                     </g>
+                  ) : selectedComp.type === 'Solid Cone' ? (
+                     <g transform="translate(100, 50)">
+                         {/* Cone */}
+                         <path d="M10,120 L50,10 L90,120" fill="none" stroke="black" strokeWidth="1.5" />
+                         <ellipse cx="50" cy="120" rx="40" ry="10" fill="none" stroke="black" />
+                         <line x1="10" y1="120" x2="90" y2="120" stroke="black" strokeDasharray="4,2" />
+                         <line x1="50" y1="10" x2="50" y2="120" stroke="black" strokeDasharray="4,2" />
+                         
+                         {/* Dimensions */}
+                         <line x1="100" y1="10" x2="100" y2="120" stroke="black" />
+                         <path d="M100,10 L97,15 M100,10 L103,15 M100,120 L97,115 M100,120 L103,115" stroke="black" />
+                         <text x="105" y="70" fontSize="12">H</text>
+
+                         <line x1="10" y1="135" x2="90" y2="135" stroke="black" />
+                         <path d="M10,135 L15,133 M10,135 L15,137 M90,135 L85,133 M90,135 L85,137" stroke="black" />
+                         <text x="45" y="150" fontSize="12">D<tspan dy="2" fontSize="10">1</tspan></text>
+                     </g>
+                  ) : selectedComp.type.includes('Sphere') ? (
+                     <g transform="translate(100, 50)">
+                        {/* Sphere */}
+                        <circle cx="50" cy="80" r="40" fill="none" stroke="black" strokeWidth="1.5" />
+                        <ellipse cx="50" cy="80" rx="40" ry="10" fill="none" stroke="black" strokeDasharray="4,2" />
+                        
+                        {selectedComp.type === 'Hollow Sphere' && (
+                           <circle cx="50" cy="80" r="25" fill="none" stroke="black" strokeDasharray="3,3" />
+                        )}
+
+                        <line x1="50" y1="40" x2="50" y2="120" stroke="black" strokeDasharray="4,2" />
+
+                        {/* Dimensions */}
+                        <line x1="10" y1="130" x2="90" y2="130" stroke="black" />
+                        <path d="M10,130 L15,128 M10,130 L15,132 M90,130 L85,128 M90,130 L85,132" stroke="black" />
+                        <text x="45" y="145" fontSize="12">D<tspan dy="2" fontSize="10">1</tspan></text>
+                     </g>
                   ) : (
                     <g transform="translate(100, 50)">
                         {/* Cylinder */}

@@ -113,7 +113,7 @@ export const UnitInput = ({
           value={currentUnit} 
           onChange={handleUnitChange}
           disabled={availableUnits.length < 2}
-          className="ml-1 w-14 text-[10px] border border-gray-300 bg-gray-50 py-0.5 h-6 focus:outline-none text-gray-700 shrink-0"
+          className="ml-1 w-20 text-[10px] border border-gray-300 bg-gray-50 py-0.5 h-6 focus:outline-none text-gray-700 shrink-0"
         >
           {availableUnits.map(u => <option key={u} value={u}>{u}</option>)}
         </select>
