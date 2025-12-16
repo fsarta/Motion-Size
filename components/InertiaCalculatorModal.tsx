@@ -8,17 +8,18 @@ interface InertiaComponent {
   type: 'Solid Cylinder' | 'Hollow Cylinder' | 'Cuboid' | 'User Spec.';
   quantity: number;
   ratio: number;
-  mass: number; // kg
+  mass: number; // kg (Base unit)
+  volume: number; // m3 (Base unit)
   material: string;
   density: number; // kg/m3
-  // Dimensions (stored in meters for calculation, displayed via UnitInput)
+  // Dimensions (stored in Base Unit: mm)
   d1: number; // Outer Diameter
   d2: number; // Inner Diameter
   h: number; // Height
   w: number; // Width
   l: number; // Length (Depth)
   r_offset: number; // Distance from axis
-  inertia: number; // kg m^2
+  inertia: number; // kg cm^2 (Base unit)
 }
 
 interface InertiaCalculatorModalProps {
@@ -29,20 +30,33 @@ interface InertiaCalculatorModalProps {
   title: string;
 }
 
+const MATERIALS = [
+  { name: 'Aluminum', density: 2700 },
+  { name: 'Brass', density: 8500 },
+  { name: 'Hard Wood (Oak)', density: 750 },
+  { name: 'Iron (Cast)', density: 7200 },
+  { name: 'Nylon', density: 1150 },
+  { name: 'POM (Delrin)', density: 1410 },
+  { name: 'Steel (Carbon Tool)', density: 7850 },
+  { name: 'Steel (Stainless)', density: 8000 },
+  { name: 'User Spec.', density: 0 }
+];
+
 const DEFAULT_ROW: InertiaComponent = {
   id: '1',
   name: 'NewComponent',
   type: 'Solid Cylinder',
   quantity: 1,
   ratio: 1,
-  mass: 1,
-  material: 'User Spec.',
-  density: 7850, // Steel approx
-  d1: 0.1, // 100mm
+  mass: 0,
+  volume: 0,
+  material: 'Steel (Carbon Tool)',
+  density: 7850,
+  d1: 100, // 100mm
   d2: 0,
-  h: 0.1, // 100mm
-  w: 0.1,
-  l: 0.1,
+  h: 100, // 100mm
+  w: 100,
+  l: 100,
   r_offset: 0,
   inertia: 0
 };
@@ -53,93 +67,121 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
   onAccept,
   title
 }) => {
-  const [components, setComponents] = useState<InertiaComponent[]>([{ ...DEFAULT_ROW, id: Date.now().toString() }]);
+  const [components, setComponents] = useState<InertiaComponent[]>([
+     calculatePhysics({ ...DEFAULT_ROW, id: Date.now().toString() })
+  ]);
   const [selectedId, setSelectedId] = useState<string>(components[0].id);
 
-  // Recalculate inertia whenever params change
-  useEffect(() => {
-    setComponents(prev => prev.map(comp => {
-      let i_local = 0;
-      const m = comp.mass;
-      
-      // Basic Inertia formulas (around center of mass). Dims are in Base Units (meters)
-      switch (comp.type) {
-        case 'Solid Cylinder':
-          // I = 0.5 * m * r^2  => r = d1/2
-          i_local = 0.5 * m * Math.pow(comp.d1 / 2, 2);
-          break;
-        case 'Hollow Cylinder':
-          // I = 0.5 * m * (r_out^2 + r_in^2)
-          i_local = 0.5 * m * (Math.pow(comp.d1 / 2, 2) + Math.pow(comp.d2 / 2, 2));
-          break;
-        case 'Cuboid':
-           // I = m * (L^2 + W^2) / 12. Rotating around axis parallel to H.
-           // Inputs: L (Length), W (Width).
-           i_local = (m * (Math.pow(comp.l, 2) + Math.pow(comp.w, 2))) / 12;
-           break;
-        case 'User Spec.':
-          i_local = comp.inertia; 
-          break;
-      }
+  // Helper to calculate Mass, Volume and Inertia based on geometry and density
+  function calculatePhysics(comp: InertiaComponent): InertiaComponent {
+    if (comp.type === 'User Spec.') {
+       // For User Spec, we assume volume is not auto-calc'd unless we add fields for it.
+       // Mass and Inertia are direct inputs/preserved.
+       return comp; 
+    }
 
-      if (comp.type !== 'User Spec.') {
-        const parallelAxisTerm = m * Math.pow(comp.r_offset, 2);
-        const total = (i_local + parallelAxisTerm) * comp.quantity * Math.pow(comp.ratio, 2);
-        return { ...comp, inertia: total };
-      }
-      return comp;
-    }));
-  }, [
-    // Recalc relies on values being updated by the UnitInput calls which update state
-  ]);
+    // 1. Dimensions to SI Units (Meters)
+    const d1_m = comp.d1 / 1000;
+    const d2_m = comp.d2 / 1000;
+    const h_m = comp.h / 1000;
+    const w_m = comp.w / 1000;
+    const l_m = comp.l / 1000;
+    const r_offset_m = comp.r_offset / 1000;
+
+    // 2. Calculate Volume (m^3)
+    let vol_m3 = 0;
+    if (comp.type === 'Solid Cylinder') {
+      const radius = d1_m / 2;
+      vol_m3 = Math.PI * Math.pow(radius, 2) * h_m;
+    } else if (comp.type === 'Hollow Cylinder') {
+      const r_out = d1_m / 2;
+      const r_in = d2_m / 2;
+      vol_m3 = Math.PI * (Math.pow(r_out, 2) - Math.pow(r_in, 2)) * h_m;
+    } else if (comp.type === 'Cuboid') {
+      vol_m3 = w_m * l_m * h_m;
+    }
+
+    // 3. Calculate Mass (kg)
+    const mass = vol_m3 * comp.density;
+
+    // 4. Calculate Base Inertia (kg*m^2) around Center of Mass
+    let I_cm_si = 0;
+    if (comp.type === 'Solid Cylinder') {
+      const radius = d1_m / 2;
+      I_cm_si = 0.5 * mass * Math.pow(radius, 2);
+    } else if (comp.type === 'Hollow Cylinder') {
+      const r_out = d1_m / 2;
+      const r_in = d2_m / 2;
+      I_cm_si = 0.5 * mass * (Math.pow(r_out, 2) + Math.pow(r_in, 2));
+    } else if (comp.type === 'Cuboid') {
+       // Rotating around axis parallel to H (so using L and W)
+       I_cm_si = (mass * (Math.pow(l_m, 2) + Math.pow(w_m, 2))) / 12;
+    }
+
+    // 5. Parallel Axis Theorem & Transmission (kg*m^2)
+    const I_parallel_si = I_cm_si + (mass * Math.pow(r_offset_m, 2));
+    const I_total_si = I_parallel_si * comp.quantity * Math.pow(comp.ratio, 2);
+
+    // 6. Convert SI Inertia (kg*m^2) to App Base Unit (kg*cm^2)
+    // 1 m^2 = 10000 cm^2
+    const I_total_storage = I_total_si * 10000;
+
+    return {
+      ...comp,
+      volume: vol_m3,
+      mass: mass,
+      inertia: I_total_storage
+    };
+  }
 
   const updateComponent = (id: string, field: keyof InertiaComponent, value: any) => {
     setComponents(prev => prev.map(c => {
       if (c.id !== id) return c;
       
       let val = value;
-      // Only parse float if the field is supposed to be numeric
-      const numericFields = ['quantity', 'ratio', 'mass', 'density', 'd1', 'd2', 'h', 'w', 'l', 'r_offset', 'inertia'];
+      // Numeric parsing
+      const numericFields = ['quantity', 'ratio', 'mass', 'density', 'd1', 'd2', 'h', 'w', 'l', 'r_offset', 'inertia', 'volume'];
       if (numericFields.includes(field)) {
           val = typeof value === 'string' ? parseFloat(value) : value;
           val = isNaN(val) ? 0 : val;
       }
       
-      const updated = { ...c, [field]: val };
+      let updated = { ...c, [field]: val };
       
-      // Handle Material change
       if (field === 'material') {
-          if (val === 'Steel') updated.density = 7850;
-          else if (val === 'Aluminum') updated.density = 2700;
-          // If User Spec, leave density as is or allow edit
+          const mat = MATERIALS.find(m => m.name === val);
+          if (mat) {
+             updated.density = mat.density;
+          }
       }
-
-      // If needed, we could auto-calculate mass here: Mass = Volume * Density
-      // But typically user might want to override mass, so we leave it decoupled for now unless requested.
-
-      // Recalc inertia logic is duplicated here to ensure immediate UI update before effect runs? 
-      // Actually the useEffect handles the recalc, but React batching means we might see a frame of old data.
-      // For this simple app, we can duplicate the math or just rely on the effect. 
-      // The effect above depends on the state change, so it will run on next render.
-      // However, to ensure the 'inertia' field in the grid updates instantly, we should calculate it here too.
-      
-      let i_local = 0;
-      const m = updated.mass;
       
       if (updated.type !== 'User Spec.') {
-          switch (updated.type) {
-            case 'Solid Cylinder':
-              i_local = 0.5 * m * Math.pow(updated.d1 / 2, 2);
-              break;
-            case 'Hollow Cylinder':
-              i_local = 0.5 * m * (Math.pow(updated.d1 / 2, 2) + Math.pow(updated.d2 / 2, 2));
-              break;
-            case 'Cuboid':
-              i_local = (m * (Math.pow(updated.l, 2) + Math.pow(updated.w, 2))) / 12;
-              break;
-          }
-          const parallelAxisTerm = m * Math.pow(updated.r_offset, 2);
-          updated.inertia = (i_local + parallelAxisTerm) * updated.quantity * Math.pow(updated.ratio, 2);
+         if (field !== 'mass' && field !== 'inertia') {
+             updated = calculatePhysics(updated);
+         } else if (field === 'mass') {
+             // Re-calc inertia if mass changes manually
+             const m = updated.mass;
+             // Assume volume matches mass/density? Or just update inertia.
+             // Let's just update inertia based on new mass and geometry
+             const r_offset_m = updated.r_offset / 1000;
+             const d1_m = updated.d1 / 1000; 
+             const d2_m = updated.d2 / 1000;
+             const l_m = updated.l / 1000; 
+             const w_m = updated.w / 1000;
+             
+             let I_cm_si = 0;
+             if (updated.type === 'Solid Cylinder') {
+                I_cm_si = 0.5 * m * Math.pow(d1_m/2, 2);
+             } else if (updated.type === 'Hollow Cylinder') {
+                I_cm_si = 0.5 * m * (Math.pow(d1_m/2, 2) + Math.pow(d2_m/2, 2));
+             } else if (updated.type === 'Cuboid') {
+                I_cm_si = (m * (Math.pow(l_m, 2) + Math.pow(w_m, 2))) / 12;
+             }
+             const I_total_si = (I_cm_si + m * Math.pow(r_offset_m, 2)) * updated.quantity * Math.pow(updated.ratio, 2);
+             updated.inertia = I_total_si * 10000;
+             // Also back-calculate volume if possible? 
+             if(updated.density > 0) updated.volume = m / updated.density;
+         }
       }
       
       return updated;
@@ -148,42 +190,29 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
 
   const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    
-    // If it's the last row, reset it instead of removing
     if (components.length <= 1) {
-        setComponents([{ ...DEFAULT_ROW, id: Date.now().toString() }]);
+        setComponents([calculatePhysics({ ...DEFAULT_ROW, id: Date.now().toString() })]);
         return;
     }
-
     const newComps = components.filter(c => c.id !== id);
     setComponents(newComps);
-    
-    // If we deleted the selected one, select the first available
-    if (selectedId === id) {
-        setSelectedId(newComps[0].id);
-    }
+    if (selectedId === id) setSelectedId(newComps[0].id);
   };
 
   const selectedComp = components.find(c => c.id === selectedId) || components[0];
   const totalInertia = components.reduce((acc, curr) => acc + curr.inertia, 0);
+  const totalMass = components.reduce((acc, curr) => acc + (curr.mass * curr.quantity), 0); // Total mass of system
+  const totalVolume = components.reduce((acc, curr) => acc + (curr.volume * curr.quantity), 0);
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-[1px]">
-      <div className="bg-win-bg w-[900px] h-[600px] shadow-2xl border border-gray-400 flex flex-col text-xs font-sans">
+      <div className="bg-win-bg w-[900px] h-[650px] shadow-2xl border border-gray-400 flex flex-col text-xs font-sans">
         {/* Window Header */}
         <div className="h-8 bg-gradient-to-r from-gray-100 to-gray-200 border-b border-gray-300 flex items-center justify-between px-2 select-none">
-          <div className="font-bold text-gray-700 flex items-center space-x-2">
-            <span>Total Inertia:</span>
-            <div className="w-32">
-                <UnitInput 
-                    value={totalInertia} 
-                    onChange={()=>{}} 
-                    type="inertia" 
-                    readOnly 
-                />
-            </div>
+          <div className="font-bold text-gray-700 pl-2">
+            {title || 'Inertia Calculator'}
           </div>
           <div className="flex items-center space-x-1">
              <HelpCircle size={16} className="text-blue-600 cursor-pointer" />
@@ -191,8 +220,8 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
           </div>
         </div>
 
-        {/* Top: Data Grid */}
-        <div className="flex-1 bg-gray-100 border-b border-gray-300 overflow-hidden flex flex-col">
+        {/* Grid Area */}
+        <div className="h-[200px] bg-gray-100 border-b border-gray-300 overflow-hidden flex flex-col">
           <div className="bg-white border-b border-gray-300 grid grid-cols-[20px_1fr_100px_60px_60px_140px_160px_30px] font-semibold text-gray-700">
              <div className="p-1 bg-gray-100 border-r border-gray-300"></div>
              <div className="p-1 border-r border-gray-300">Component Name</div>
@@ -264,7 +293,7 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
               className="p-1 pl-6 text-gray-400 italic cursor-pointer hover:bg-gray-50 border-b border-gray-100 flex items-center"
               onClick={() => {
                 const newId = Date.now().toString();
-                setComponents([...components, { ...DEFAULT_ROW, id: newId }]);
+                setComponents([...components, calculatePhysics({ ...DEFAULT_ROW, id: newId })]);
                 setSelectedId(newId);
               }}
             >
@@ -273,92 +302,104 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
           </div>
         </div>
 
+        {/* Overall Summary Section (Between Grid and Details) */}
+        <div className="bg-gray-200 border-b border-gray-300 py-2 px-4 flex items-center justify-between shadow-inner">
+           <div className="text-gray-700 font-bold uppercase text-[10px] tracking-wide">Overall System Results</div>
+           <div className="flex space-x-6">
+              <div className="flex items-center space-x-2">
+                 <span className="font-semibold text-gray-600">Overall Volume:</span>
+                 <div className="w-24"><UnitInput value={totalVolume} onChange={()=>{}} type="volume" readOnly /></div>
+              </div>
+              <div className="flex items-center space-x-2">
+                 <span className="font-semibold text-gray-600">Overall Mass:</span>
+                 <div className="w-24"><UnitInput value={totalMass} onChange={()=>{}} type="mass" readOnly /></div>
+              </div>
+              <div className="flex items-center space-x-2">
+                 <span className="font-semibold text-win-blue">Overall Inertia:</span>
+                 <div className="w-28 bg-white border border-blue-300 shadow-sm"><UnitInput value={totalInertia} onChange={()=>{}} type="inertia" readOnly /></div>
+              </div>
+           </div>
+        </div>
+
         {/* Bottom: Detail Panel */}
-        <div className="h-[280px] bg-win-bg flex">
-           {/* Left: Inputs - Using UnitInput for conversion */}
-           <div className="w-[350px] p-4 border-r border-gray-300 flex flex-col space-y-2">
+        <div className="flex-1 bg-win-bg flex overflow-hidden">
+           {/* Left: Inputs Section */}
+           <div className="w-[450px] p-4 border-r border-gray-300 flex flex-col overflow-y-auto">
               
-              <InputGroup label="Height [H]">
-                 <UnitInput 
-                    type="length" 
-                    value={selectedComp.h} 
-                    onChange={(val) => updateComponent(selectedComp.id, 'h', val)} 
-                 />
-              </InputGroup>
-              
-              {(selectedComp.type === 'Hollow Cylinder' || selectedComp.type === 'Solid Cylinder') && (
-                <InputGroup label="Outer Diameter [D1]">
-                    <UnitInput 
-                        type="length" 
-                        value={selectedComp.d1} 
-                        onChange={(val) => updateComponent(selectedComp.id, 'd1', val)} 
-                    />
-                </InputGroup>
-              )}
+              {/* Properties Section */}
+              <div className="mb-4">
+                <h4 className="font-bold text-gray-700 mb-2 border-b border-gray-300 pb-0.5">Properties</h4>
+                <div className="space-y-2 pl-2">
+                   <InputGroup label="Height [H]">
+                      <UnitInput type="length" value={selectedComp.h} onChange={(val) => updateComponent(selectedComp.id, 'h', val)} />
+                   </InputGroup>
+                   
+                   {(selectedComp.type === 'Hollow Cylinder' || selectedComp.type === 'Solid Cylinder') && (
+                     <InputGroup label="Outer Diameter [D1]">
+                         <UnitInput type="length" value={selectedComp.d1} onChange={(val) => updateComponent(selectedComp.id, 'd1', val)} />
+                     </InputGroup>
+                   )}
 
-              {selectedComp.type === 'Hollow Cylinder' && (
-                <InputGroup label="Inner Diameter [D2]">
-                    <UnitInput 
-                        type="length" 
-                        value={selectedComp.d2} 
-                        onChange={(val) => updateComponent(selectedComp.id, 'd2', val)} 
-                    />
-                </InputGroup>
-              )}
+                   {selectedComp.type === 'Hollow Cylinder' && (
+                     <InputGroup label="Inner Diameter [D2]">
+                         <UnitInput type="length" value={selectedComp.d2} onChange={(val) => updateComponent(selectedComp.id, 'd2', val)} />
+                     </InputGroup>
+                   )}
 
-              {selectedComp.type === 'Cuboid' && (
-                <>
-                  <InputGroup label="Width [W]">
-                      <UnitInput 
-                          type="length" 
-                          value={selectedComp.w} 
-                          onChange={(val) => updateComponent(selectedComp.id, 'w', val)} 
-                      />
-                  </InputGroup>
-                  <InputGroup label="Length [L]">
-                      <UnitInput 
-                          type="length" 
-                          value={selectedComp.l} 
-                          onChange={(val) => updateComponent(selectedComp.id, 'l', val)} 
-                      />
-                  </InputGroup>
-                </>
-              )}
+                   {selectedComp.type === 'Cuboid' && (
+                     <>
+                       <InputGroup label="Width [W]">
+                           <UnitInput type="length" value={selectedComp.w} onChange={(val) => updateComponent(selectedComp.id, 'w', val)} />
+                       </InputGroup>
+                       <InputGroup label="Length [L]">
+                           <UnitInput type="length" value={selectedComp.l} onChange={(val) => updateComponent(selectedComp.id, 'l', val)} />
+                       </InputGroup>
+                     </>
+                   )}
 
-              <InputGroup label="Offset [r]">
-                    <UnitInput 
-                        type="length" 
-                        value={selectedComp.r_offset} 
-                        onChange={(val) => updateComponent(selectedComp.id, 'r_offset', val)} 
-                    />
-              </InputGroup>
+                   <InputGroup label="Offset [r]">
+                         <UnitInput type="length" value={selectedComp.r_offset} onChange={(val) => updateComponent(selectedComp.id, 'r_offset', val)} />
+                   </InputGroup>
+                </div>
+              </div>
 
-              <div className="h-px bg-gray-300 my-2"></div>
+              {/* Density Section */}
+              <div className="mb-4">
+                 <h4 className="font-bold text-gray-700 mb-2 border-b border-gray-300 pb-0.5">Density</h4>
+                 <div className="space-y-2 pl-2">
+                    <InputGroup label="Material">
+                       <Select 
+                          value={selectedComp.material} 
+                          options={MATERIALS.map(m => m.name)} 
+                          onChange={(e) => updateComponent(selectedComp.id, 'material', e.target.value)} 
+                       />
+                    </InputGroup>
+                    <InputGroup label="Density">
+                       <UnitInput 
+                          type="density" 
+                          value={selectedComp.density} 
+                          onChange={(val) => updateComponent(selectedComp.id, 'density', val)} 
+                          readOnly={selectedComp.material !== 'User Spec.'}
+                       />
+                    </InputGroup>
+                 </div>
+              </div>
 
-              <InputGroup label="Material">
-                 <Select 
-                    value={selectedComp.material} 
-                    options={['Steel', 'Aluminum', 'User Spec.']} 
-                    onChange={(e) => updateComponent(selectedComp.id, 'material', e.target.value)} 
-                 />
-              </InputGroup>
-              
-              <InputGroup label="Density">
-                 <UnitInput 
-                    type="density" 
-                    value={selectedComp.density} 
-                    onChange={(val) => updateComponent(selectedComp.id, 'density', val)} 
-                    readOnly={selectedComp.material !== 'User Spec.'}
-                 />
-              </InputGroup>
-              
-              <InputGroup label="Mass">
-                 <UnitInput 
-                    type="mass" 
-                    value={selectedComp.mass} 
-                    onChange={(val) => updateComponent(selectedComp.id, 'mass', val)} 
-                 />
-              </InputGroup>
+              {/* Result Section */}
+              <div>
+                 <h4 className="font-bold text-gray-700 mb-2 border-b border-gray-300 pb-0.5">Result (Single Item)</h4>
+                 <div className="space-y-2 pl-2">
+                    <InputGroup label="Volume">
+                       <UnitInput type="volume" value={selectedComp.volume} onChange={()=>{}} readOnly />
+                    </InputGroup>
+                    <InputGroup label="Mass">
+                       <UnitInput type="mass" value={selectedComp.mass} onChange={(val) => updateComponent(selectedComp.id, 'mass', val)} />
+                    </InputGroup>
+                    <InputGroup label="Inertia">
+                       <UnitInput type="inertia" value={selectedComp.inertia} onChange={()=>{}} readOnly />
+                    </InputGroup>
+                 </div>
+              </div>
 
            </div>
 
@@ -397,42 +438,30 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
 
                   {selectedComp.type === 'Cuboid' ? (
                     <g transform="translate(100, 50)">
-                        {/* 3D Cube: Center roughly at 50,75 relative to group */}
-                        
-                        {/* Back Face (Hidden lines dashed?) usually simplified. Let's draw wireframe */}
-                        
-                        {/* Dimensions logic for drawing scaling (fake) */}
-                        
-                        {/* Front Face */}
+                        {/* 3D Cube */}
                         <rect x="20" y="40" width="80" height="80" fill="none" stroke="black" strokeWidth="1.5" />
-                        
-                        {/* Back Face */}
                         <polyline points="20,40 50,10 130,10 130,90 100,120" fill="none" stroke="black" strokeWidth="1.5" />
                         <line x1="100" y1="40" x2="130" y2="10" stroke="black" strokeWidth="1.5" />
                         
                         {/* Center of Mass Indicator */}
                         <circle cx="60" cy="80" r="10" fill="yellow" stroke="black" />
                         <path d="M60,80 L60,90 L70,80 A10,10 0 0 0 60,70 Z" fill="black" />
-                        <path d="M60,80 L50,80 A10,10 0 0 0 60,70 Z" fill="white" /> {/* Quarter fill hack */}
+                        <path d="M60,80 L50,80 A10,10 0 0 0 60,70 Z" fill="white" />
                         <line x1="60" y1="70" x2="60" y2="90" stroke="black" />
                         <line x1="50" y1="80" x2="70" y2="80" stroke="black" />
 
                         {/* Dimensions */}
-                        {/* H */}
                         <line x1="140" y1="10" x2="140" y2="90" stroke="black" />
                         <path d="M140,10 L137,15 M140,10 L143,15 M140,90 L137,85 M140,90 L143,85" stroke="black" />
                         <text x="145" y="55" fontSize="12">H</text>
 
-                        {/* W (Width - Front face width) */}
                         <line x1="20" y1="130" x2="100" y2="130" stroke="black" />
                         <path d="M20,130 L25,127 M20,130 L25,133 M100,130 L95,127 M100,130 L95,133" stroke="black" />
                         <text x="55" y="145" fontSize="12">W</text>
 
-                        {/* L (Length - Depth side) */}
                         <line x1="105" y1="125" x2="135" y2="95" stroke="black" />
-                        <path d="M105,125 L110,120 M135,95 L130,100" stroke="black" /> {/* Arrows approx */}
+                        <path d="M105,125 L110,120 M135,95 L130,100" stroke="black" />
                         <text x="125" y="125" fontSize="12">L</text>
-
                     </g>
                   ) : (
                     <g transform="translate(100, 50)">
@@ -446,12 +475,10 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
                             <ellipse cx="50" cy="50" rx="20" ry="5" fill="none" stroke="black" strokeDasharray="2,2" />
                         )}
 
-                        {/* h */}
                         <line x1="100" y1="50" x2="100" y2="120" stroke="black" />
                         <path d="M100,50 L97,55 M100,50 L103,55 M100,120 L97,115 M100,120 L103,115" stroke="black" />
                         <text x="105" y="90" fontSize="14" fontStyle="italic">h</text>
                         
-                        {/* D1 */}
                         <line x1="10" y1="135" x2="90" y2="135" stroke="black" />
                         <path d="M10,135 L15,133 M10,135 L15,137 M90,135 L85,133 M90,135 L85,137" stroke="black" />
                         <text x="45" y="150" fontSize="12">D<tspan dy="2" fontSize="10">1</tspan></text>

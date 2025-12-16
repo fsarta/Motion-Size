@@ -1,5 +1,5 @@
 
-export type UnitType = 'torque' | 'power' | 'inertia' | 'length' | 'mass' | 'force' | 'current' | 'voltage' | 'frequency' | 'speed' | 'ratio' | 'efficiency' | 'angle' | 'factor' | 'density' | 'temperature' | 'time';
+export type UnitType = 'torque' | 'power' | 'inertia' | 'length' | 'mass' | 'force' | 'current' | 'voltage' | 'frequency' | 'speed' | 'ratio' | 'efficiency' | 'angle' | 'factor' | 'density' | 'temperature' | 'time' | 'volume';
 
 interface UnitDef {
   label: string;
@@ -18,6 +18,7 @@ interface UnitDef {
 // Angle: deg
 // Temperature: C
 // Time: s
+// Volume: m³
 
 export const UNIT_DEFINITIONS: Record<UnitType, Record<string, UnitDef>> = {
   length: {
@@ -60,13 +61,15 @@ export const UNIT_DEFINITIONS: Record<UnitType, Record<string, UnitDef>> = {
     'm/s': { label: 'm/s (lin)', factor: 0, precision: 2 }, // Context dependent, usually kept separate
   },
   density: {
-    'kg/m³': { label: 'kg/m³', factor: 1, precision: 0 }, // Assuming base is kg/m3 ? Wait, previous code had conversion. 
-    // Let's assume input base was kg/m3. 
-    // Actually previous code: factor 0.036127 for imperial. 
-    // 1 kg/m3 = 0.000036127 lb/in3. 
-    // Let's align with typical materials.
+    'kg/m³': { label: 'kg/m³', factor: 1, precision: 0 }, 
     'g/cm³': { label: 'g/cm³', factor: 0.001, precision: 2 },
     'lb/in³': { label: 'lb/in³', factor: 0.000036127, precision: 4 }, 
+  },
+  volume: {
+    'm³': { label: 'm³', factor: 1, precision: 6 },
+    'cm³': { label: 'cm³', factor: 1000000, precision: 1 },
+    'mm³': { label: 'mm³', factor: 1000000000, precision: 0 },
+    'L': { label: 'L', factor: 1000, precision: 3 },
   },
   angle: {
     'deg': { label: '°', factor: 1, precision: 1 },
@@ -75,7 +78,7 @@ export const UNIT_DEFINITIONS: Record<UnitType, Record<string, UnitDef>> = {
   },
   temperature: {
     'C': { label: '°C', factor: 1, precision: 1 },
-    'F': { label: '°F', factor: 1, precision: 1 }, // Special handling needed usually, but purely linear approx for diffs
+    'F': { label: '°F', factor: 1, precision: 1 }, 
   },
   time: {
     's': { label: 's', factor: 1, precision: 2 },
@@ -85,7 +88,7 @@ export const UNIT_DEFINITIONS: Record<UnitType, Record<string, UnitDef>> = {
   // Pass-throughs / Singles
   current: { 'Arms': { label: 'Arms', factor: 1, precision: 2 } },
   voltage: { 'V': { label: 'V', factor: 1, precision: 0 }, 'kV': { label: 'kV', factor: 0.001, precision: 2 } },
-  frequency: { 'Hz': { label: 'Hz', factor: 1000, precision: 0 }, 'kHz': { label: 'kHz', factor: 1, precision: 1 } }, // Base likely kHz in drive data
+  frequency: { 'Hz': { label: 'Hz', factor: 1000, precision: 0 }, 'kHz': { label: 'kHz', factor: 1, precision: 1 } },
   ratio: { ':1': { label: ':1', factor: 1, precision: 2 } },
   efficiency: { '%': { label: '%', factor: 1, precision: 1 } },
   factor: { 'µ': { label: '', factor: 1, precision: 2 } },
@@ -104,7 +107,6 @@ export const toDisplay = (baseValue: string | number | undefined, type: UnitType
 
   const def = defs[unitKey];
   
-  // Special handling for Temperature if we were doing absolute temp, but usually strictly linear factor here
   return (numValue * def.factor).toFixed(def.precision);
 };
 
@@ -121,7 +123,6 @@ export const toBase = (displayValue: string | number, type: UnitType, unitKey: s
   const def = defs[unitKey];
   
   // Base = Display / Factor
-  // We use higher precision for storage to avoid rounding drift
   return (numValue / def.factor).toPrecision(10); 
 };
 
