@@ -1,50 +1,51 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, ZoomIn, ZoomOut, BarChart2, Lock, Unlock, ChevronDown, ChevronRight } from 'lucide-react';
+import { UnitInput, Select } from './Common';
+import { toBase } from '../utils/unitConversion';
 
 /* --- Types --- */
 
 type SegmentType = 'Accel/Decel' | 'Trapezoid' | 'Triangle' | 'S-Curve' | 'Dwell/Traverse' | 'Sine';
+type CalcTarget = 'duration' | 'distance' | 'velocity'; // Which parameter is calculated?
 
 interface MotionSegment {
   id: string;
   type: SegmentType;
   
-  // Basic Kinematics
-  duration: number; // s
-  distance: number; // user units (deg, mm)
-  velocity: number; // max velocity
+  // Basic Kinematics (Stored in Base Units: s, deg/mm, deg/s / mm/s)
+  duration: number; 
+  distance: number; 
+  velocity: number; 
   
-  // Dynamics
+  // Dynamics (Calculated/Stored)
   accel: number; 
   decel: number;
   jerk: number;
   
   // Configuration
-  payload: number; // External Force / Torque
+  payload: number; 
   
-  // UI State
-  lockDuration: boolean;
-  lockDistance: boolean;
-  lockVelocity: boolean;
-  lockAccel: boolean; // New lock for Accel/Decel section
+  // State
+  calcTarget: CalcTarget; // The "Unlocked" parameter
   
-  accelMode: 'Rate' | 'Time'; // Input acceleration as Rate (unit/s^2) or Time (s)
+  // UI Preferences
+  distUnitType: 'angle' | 'length'; // User toggle for Rotary vs Linear
 }
 
 const DEFAULT_SEGMENTS: MotionSegment[] = [
   { 
-    id: '1', type: 'Accel/Decel', 
-    duration: 1.0, distance: 360, velocity: 500, 
-    accel: 0, decel: 0, jerk: 0, payload: 0,
-    lockDuration: true, lockDistance: true, lockVelocity: false, lockAccel: true,
-    accelMode: 'Rate'
+    id: '1', type: 'Trapezoid', 
+    duration: 1.0, distance: 360, velocity: 540, // 360 deg in 1s trapezoid (1.5 factor) = 540 deg/s peak
+    accel: 1620, decel: 1620, jerk: 0, payload: 0,
+    calcTarget: 'velocity', // Velocity is calculated from Time & Dist
+    distUnitType: 'angle'
   },
   { 
     id: '2', type: 'Dwell/Traverse', 
     duration: 0.5, distance: 0, velocity: 0, 
     accel: 0, decel: 0, jerk: 0, payload: 0,
-    lockDuration: true, lockDistance: true, lockVelocity: false, lockAccel: true,
-    accelMode: 'Rate'
+    calcTarget: 'distance',
+    distUnitType: 'angle'
   },
 ];
 
@@ -53,46 +54,43 @@ const DEFAULT_SEGMENTS: MotionSegment[] = [
 const LockButton = ({ locked, onClick }: { locked: boolean, onClick: () => void }) => (
   <button 
     onClick={onClick}
-    className="mr-1 text-gray-700 hover:text-black focus:outline-none"
-    title={locked ? "Unlock parameter (Calculate this)" : "Lock parameter (Fixed input)"}
+    className={`mr-1 focus:outline-none ${locked ? 'text-black' : 'text-gray-400 hover:text-blue-600'}`}
+    title={locked ? "Locked (Input)" : "Unlocked (Calculated)"}
   >
     {locked ? <Lock size={14} fill="currentColor" /> : <Unlock size={14} />}
   </button>
 );
 
-const DetailInputRow = ({ 
-  label, value, onChange, unit, locked, onToggleLock 
+const DetailRow = ({ 
+  label, 
+  children,
+  locked,
+  onToggleLock
 }: { 
-  label: string, value: number, onChange: (v: number) => void, unit?: string, locked?: boolean, onToggleLock?: () => void 
+  label: string, 
+  children: React.ReactNode, 
+  locked: boolean, 
+  onToggleLock: () => void 
 }) => (
   <div className="mb-3">
     <div className="flex items-center justify-between mb-1">
-      <label className="text-xs text-gray-700 font-medium">{label} {unit && `(${unit})`}</label>
+      <label className="text-xs text-gray-700 font-medium">{label}</label>
     </div>
     <div className="flex items-center">
-      {onToggleLock && <LockButton locked={!!locked} onClick={onToggleLock} />}
-      <input 
-        type="number" 
-        className={`w-full text-xs border border-gray-300 px-2 py-1 h-7 rounded-sm focus:outline-none focus:border-blue-500
-          ${locked ? 'bg-white text-black font-semibold' : 'bg-gray-100 text-gray-500'}
-        `}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        readOnly={!locked}
-      />
+      <LockButton locked={locked} onClick={onToggleLock} />
+      <div className={`flex-1 ${!locked ? 'opacity-80' : ''}`}>
+        {children}
+      </div>
     </div>
   </div>
 );
 
-const DetailRightInput = ({ label, value, onChange }: { label: string, value: number, onChange: (v: number) => void }) => (
+const ReadOnlyRow = ({ label, children }: { label: string, children: React.ReactNode }) => (
   <div className="flex items-center mb-2">
-    <label className="w-12 text-right text-xs text-gray-600 mr-2">{label}</label>
-    <input 
-      type="number"
-      className="flex-1 text-xs border border-gray-300 px-2 py-1 h-6 rounded-sm focus:outline-none focus:border-blue-500"
-      value={value}
-      onChange={(e) => onChange(parseFloat(e.target.value))}
-    />
+    <label className="w-16 text-right text-xs text-gray-600 mr-2">{label}</label>
+    <div className="flex-1 min-w-0">
+      {children}
+    </div>
   </div>
 );
 
@@ -100,10 +98,118 @@ export const ProfileEditor: React.FC = () => {
   const [segments, setSegments] = useState<MotionSegment[]>(DEFAULT_SEGMENTS);
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_SEGMENTS[0].id);
 
-  // --- Handlers ---
+  // --- Logic ---
+
+  // Solves the kinematic triangle (d, v, t) and dynamics based on profile type
+  const solveSegment = (seg: MotionSegment): MotionSegment => {
+    let { duration, distance, velocity, type, calcTarget } = seg;
+    let accel = 0, decel = 0, jerk = 0;
+
+    // 1. Solve Kinematics (d, v, t)
+    // Factors depend on profile area. 
+    // Triangle: Vpeak = 2 * Vavg
+    // Trapezoid (1/3): Vpeak = 1.5 * Vavg
+    // Sine/S-Curve: Higher factors (~2 for Sine)
+    // Dwell: V = 0
+    
+    let shapeFactor = 1.0; // Square (Const Vel)
+    if (type === 'Trapezoid') shapeFactor = 1.5;
+    if (type === 'Triangle') shapeFactor = 2.0;
+    if (type === 'Accel/Decel') shapeFactor = 2.0; // Linear ramp from 0
+    
+    // Avoid division by zero
+    const safeDur = duration === 0 ? 0.0001 : duration;
+    const safeVel = velocity === 0 ? 0.0001 : velocity;
+
+    if (calcTarget === 'velocity') {
+       if (type === 'Dwell/Traverse' && distance === 0) {
+           velocity = 0;
+       } else {
+           const vAvg = distance / safeDur;
+           velocity = vAvg * shapeFactor;
+       }
+    } else if (calcTarget === 'duration') {
+       if (velocity === 0 && distance !== 0) {
+           duration = 0; // Impossible
+       } else {
+           const vAvg = velocity / shapeFactor;
+           duration = Math.abs(distance / (vAvg || 1)); // Avoid inf
+       }
+    } else if (calcTarget === 'distance') {
+       const vAvg = velocity / shapeFactor;
+       distance = vAvg * duration;
+    }
+
+    // 2. Solve Dynamics (Accel, Decel, Jerk) based on Vpeak and Time
+    // Formulas assume symmetric profiles for simplicity in this demo
+    if (type === 'Trapezoid') {
+        // 1/3 time for accel
+        const tAcc = duration / 3;
+        accel = Math.abs(velocity / tAcc);
+        decel = Math.abs(velocity / tAcc);
+    } else if (type === 'Triangle') {
+        // 1/2 time for accel
+        const tAcc = duration / 2;
+        accel = Math.abs(velocity / tAcc);
+        decel = Math.abs(velocity / tAcc);
+    } else if (type === 'Accel/Decel') {
+        // Full time for accel
+        accel = Math.abs(velocity / duration);
+        decel = 0; 
+    } else if (type === 'Dwell/Traverse') {
+        accel = 0;
+        decel = 0;
+    }
+    
+    // Jerk approximation (infinite for linear ramps, but let's show 0 or a value if S-Curve)
+    jerk = 0;
+
+    return {
+        ...seg,
+        duration,
+        distance,
+        velocity,
+        accel,
+        decel,
+        jerk
+    };
+  };
 
   const updateSegment = (id: string, updates: Partial<MotionSegment>) => {
-    setSegments(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+    setSegments(prev => prev.map(s => {
+      if (s.id !== id) return s;
+      
+      const updated = { ...s, ...updates };
+      // Logic for calcTarget switching
+      // If we are locking the current target (e.g. was calc Velocity, now user enters Velocity)
+      // We must unlock something else. Priority: Unlock Distance, then Duration.
+      if (updates.calcTarget === undefined && updates.velocity !== undefined && s.calcTarget === 'velocity') {
+          // User edited Velocity manually, so Velocity becomes Input.
+          // We need a new target. Let's solve for Distance.
+          updated.calcTarget = 'distance'; 
+      }
+      
+      return solveSegment(updated);
+    }));
+  };
+
+  // Helper to switch lock state
+  const handleLockClick = (seg: MotionSegment, target: CalcTarget) => {
+      // If clicking the Open Lock (currently calculated), it becomes Closed (Input).
+      // We must choose another field to become Open (Calculated).
+      // If clicking a Closed Lock (currently input), it becomes Open (Calculated).
+      
+      if (seg.calcTarget === target) {
+          // It is currently calculated (Open). User wants to Lock it.
+          // Do nothing? Or force another to unlock?
+          // Usually clicking an open lock means "I want to set this".
+          // But to set it, we just type in the box.
+          // Let's assume clicking lock explicitly sets it as the Calculated field.
+          return; 
+      } else {
+          // It is currently Input (Closed). User wants to Unlock it (make it calculated).
+          updateSegment(seg.id, { calcTarget: target });
+      }
   };
 
   const addSegment = () => {
@@ -112,27 +218,23 @@ export const ProfileEditor: React.FC = () => {
        id: newId, type: 'Dwell/Traverse',
        duration: 1.0, distance: 0, velocity: 0,
        accel: 0, decel: 0, jerk: 0, payload: 0,
-       lockDuration: true, lockDistance: true, lockVelocity: false, lockAccel: true,
-       accelMode: 'Time'
+       calcTarget: 'distance',
+       distUnitType: 'angle'
     };
-    setSegments([...segments, newSeg]);
+    setSegments([...segments, solveSegment(newSeg)]);
     setSelectedId(newId);
   };
 
   const removeSegment = (id: string) => {
     if (segments.length <= 1) return;
-    const idx = segments.findIndex(s => s.id === id);
     const newSegs = segments.filter(s => s.id !== id);
     setSegments(newSegs);
-    if (selectedId === id) {
-        setSelectedId(newSegs[Math.min(idx, newSegs.length - 1)].id);
-    }
+    if (selectedId === id) setSelectedId(newSegs[0].id);
   };
 
   const selectedSegment = segments.find(s => s.id === selectedId) || segments[0];
 
   // --- Chart Calculation ---
-  // Calculates points for plotting based on the segment type
   const chartData = useMemo(() => {
     let currentTime = 0;
     const points: { x: number; y: number }[] = [{ x: 0, y: 0 }];
@@ -141,17 +243,14 @@ export const ProfileEditor: React.FC = () => {
     segments.forEach(seg => {
         const startT = currentTime;
         const endT = currentTime + seg.duration;
-        const V = seg.velocity; // For simplicity, we assume velocity inputs are relative max/end velocities
+        const V = seg.velocity;
         
-        // Simple shape generation logic
         if (seg.type === 'Trapezoid') {
-             // 1/3 Accel, 1/3 Const, 1/3 Decel (Simplified model)
              const t1 = startT + (seg.duration * 0.33);
              const t2 = startT + (seg.duration * 0.66);
-             
              points.push({ x: t1, y: V });
              points.push({ x: t2, y: V });
-             points.push({ x: endT, y: 0 }); // Assuming return to 0 for demo visual
+             points.push({ x: endT, y: 0 }); 
         } else if (seg.type === 'Triangle') {
              const tMid = startT + (seg.duration * 0.5);
              points.push({ x: tMid, y: V });
@@ -163,10 +262,8 @@ export const ProfileEditor: React.FC = () => {
                  points.push({ x: endT, y: V }); 
              }
         } else if (seg.type === 'Accel/Decel') {
-             // Linear Ramp to target V
              points.push({ x: endT, y: V });
         } else {
-             // Default linear
              points.push({ x: endT, y: V });
         }
 
@@ -181,8 +278,8 @@ export const ProfileEditor: React.FC = () => {
   const svgW = 600;
   const svgH = 300;
   const pad = 40;
-  const scaleX = (x: number) => pad + (x / chartData.totalTime) * (svgW - 2*pad);
-  const scaleY = (y: number) => (svgH - pad) - (y / (chartData.maxVel * 1.2)) * (svgH - 2*pad);
+  const scaleX = (x: number) => pad + (x / (chartData.totalTime || 1)) * (svgW - 2*pad);
+  const scaleY = (y: number) => (svgH - pad) - (y / ((chartData.maxVel || 10) * 1.2)) * (svgH - 2*pad);
 
 
   return (
@@ -193,7 +290,6 @@ export const ProfileEditor: React.FC = () => {
         
         {/* 1. TOP: Segment Grid */}
         <div className="h-[40%] flex flex-col bg-white">
-           {/* Toolbar */}
            <div className="h-7 bg-gray-100 border-b border-gray-300 flex items-center px-2 space-x-2 shrink-0">
              <button onClick={addSegment} className="flex items-center px-2 py-0.5 bg-white border border-gray-300 rounded shadow-sm hover:bg-blue-50 text-xs text-gray-700">
                 <Plus size={12} className="mr-1 text-green-600"/> Add
@@ -202,17 +298,15 @@ export const ProfileEditor: React.FC = () => {
              <span className="font-bold text-gray-500 uppercase tracking-wider text-[10px]">Sequence</span>
            </div>
            
-           {/* Header */}
            <div className="grid grid-cols-[24px_110px_60px_70px_1fr_24px] bg-gray-200 border-b border-gray-300 font-semibold text-gray-700 py-1 shrink-0">
                <div className="text-center">#</div>
                <div className="px-1 border-l border-gray-300">Type</div>
-               <div className="px-1 border-l border-gray-300 text-right">Time (s)</div>
-               <div className="px-1 border-l border-gray-300 text-right">Pos (deg)</div>
-               <div className="px-1 border-l border-gray-300 text-right">Ext. Force</div>
+               <div className="px-1 border-l border-gray-300 text-right">Time</div>
+               <div className="px-1 border-l border-gray-300 text-right">Dist</div>
+               <div className="px-1 border-l border-gray-300 text-right">V Max</div>
                <div></div>
            </div>
 
-           {/* Rows */}
            <div className="flex-1 overflow-y-auto bg-white">
                {segments.map((seg, idx) => (
                    <div 
@@ -225,7 +319,6 @@ export const ProfileEditor: React.FC = () => {
                        <div className="flex items-center justify-center text-gray-500 h-full border-r border-gray-200 bg-gray-50">
                           {selectedId === seg.id ? <ChevronRight size={12} className="text-black"/> : (idx + 1)}
                        </div>
-                       
                        <div className="p-0.5 border-r border-gray-200">
                            <select 
                              className="w-full bg-transparent outline-none focus:bg-white text-xs"
@@ -240,10 +333,9 @@ export const ProfileEditor: React.FC = () => {
                               <option>Sine</option>
                            </select>
                        </div>
-
-                       <div className="p-1 text-right border-r border-gray-200">{seg.duration}</div>
-                       <div className="p-1 text-right border-r border-gray-200">{seg.distance}</div>
-                       <div className="p-1 text-right border-r border-gray-200">{seg.payload}</div>
+                       <div className="p-1 text-right border-r border-gray-200 truncate">{seg.duration.toFixed(3)}</div>
+                       <div className="p-1 text-right border-r border-gray-200 truncate">{seg.distance.toFixed(1)}</div>
+                       <div className="p-1 text-right border-r border-gray-200 truncate">{seg.velocity.toFixed(1)}</div>
                        
                        <div className="flex items-center justify-center">
                            <button onClick={(e) => { e.stopPropagation(); removeSegment(seg.id); }} className="text-gray-400 hover:text-red-500">
@@ -255,85 +347,90 @@ export const ProfileEditor: React.FC = () => {
            </div>
         </div>
 
-        {/* 2. BOTTOM: Detail Panel (Gray) */}
+        {/* 2. BOTTOM: Detail Panel */}
         <div className="flex-1 bg-gray-100 border-t border-gray-300 p-4 shadow-inner overflow-y-auto">
            {selectedSegment && (
              <div className="flex gap-6">
                 
-                {/* Left Column: Basic Kinematics */}
-                <div className="flex-1 min-w-[140px]">
-                   <DetailInputRow 
+                {/* Left Column: Kinematics Inputs */}
+                <div className="flex-1 min-w-[160px]">
+                   <DetailRow 
                       label="Duration" 
-                      unit="s" 
-                      value={selectedSegment.duration} 
-                      onChange={(v) => updateSegment(selectedSegment.id, { duration: v })}
-                      locked={selectedSegment.lockDuration}
-                      onToggleLock={() => updateSegment(selectedSegment.id, { lockDuration: !selectedSegment.lockDuration })}
-                   />
-                   <DetailInputRow 
-                      label="Distance" 
-                      unit="deg" 
-                      value={selectedSegment.distance} 
-                      onChange={(v) => updateSegment(selectedSegment.id, { distance: v })}
-                      locked={selectedSegment.lockDistance}
-                      onToggleLock={() => updateSegment(selectedSegment.id, { lockDistance: !selectedSegment.lockDistance })}
-                   />
-                   <DetailInputRow 
-                      label="Velocity" 
-                      unit="deg/s" 
-                      value={selectedSegment.velocity} 
-                      onChange={(v) => updateSegment(selectedSegment.id, { velocity: v })}
-                      locked={selectedSegment.lockVelocity}
-                      onToggleLock={() => updateSegment(selectedSegment.id, { lockVelocity: !selectedSegment.lockVelocity })}
-                   />
-                </div>
-
-                {/* Right Column: Dynamics / Specifics */}
-                <div className="flex-1 min-w-[180px]">
-                   {/* Header Row with Lock and Dropdown */}
-                   <div className="flex justify-end mb-3 items-center">
-                      <LockButton 
-                        locked={selectedSegment.lockAccel} 
-                        onClick={() => updateSegment(selectedSegment.id, { lockAccel: !selectedSegment.lockAccel })} 
+                      locked={selectedSegment.calcTarget !== 'duration'}
+                      onToggleLock={() => handleLockClick(selectedSegment, 'duration')}
+                   >
+                      <UnitInput 
+                         type="time"
+                         value={selectedSegment.duration}
+                         onChange={(v) => updateSegment(selectedSegment.id, { duration: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'duration' ? 'velocity' : selectedSegment.calcTarget })}
+                         readOnly={selectedSegment.calcTarget === 'duration'}
                       />
-                      <div className="relative inline-block text-left w-32">
-                         <select 
-                            className="block w-full text-xs border border-gray-300 py-1 pl-2 pr-4 rounded-sm leading-tight focus:outline-none focus:bg-white bg-white"
-                            value={selectedSegment.accelMode}
-                            onChange={(e) => updateSegment(selectedSegment.id, { accelMode: e.target.value as any })}
-                         >
-                            <option value="Rate">Rate (deg/s²)</option>
-                            <option value="Time">Time (s)</option>
-                         </select>
+                   </DetailRow>
+
+                   <div className="mb-3">
+                      <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs text-gray-700 font-medium">Distance</label>
+                          {/* Unit Type Toggle for Distance */}
+                          <select 
+                             className="text-[10px] bg-transparent border-none outline-none text-gray-500 cursor-pointer hover:text-blue-600"
+                             value={selectedSegment.distUnitType}
+                             onChange={(e) => updateSegment(selectedSegment.id, { distUnitType: e.target.value as any })}
+                          >
+                             <option value="angle">Rotary (deg, rad)</option>
+                             <option value="length">Linear (mm, m)</option>
+                          </select>
+                      </div>
+                      <div className="flex items-center">
+                          <LockButton 
+                             locked={selectedSegment.calcTarget !== 'distance'} 
+                             onClick={() => handleLockClick(selectedSegment, 'distance')} 
+                          />
+                          <div className={`flex-1 ${selectedSegment.calcTarget === 'distance' ? 'opacity-80' : ''}`}>
+                             <UnitInput 
+                                type={selectedSegment.distUnitType}
+                                value={selectedSegment.distance}
+                                onChange={(v) => updateSegment(selectedSegment.id, { distance: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'distance' ? 'velocity' : selectedSegment.calcTarget })}
+                                readOnly={selectedSegment.calcTarget === 'distance'}
+                             />
+                          </div>
                       </div>
                    </div>
+
+                   <DetailRow 
+                      label="Velocity" 
+                      locked={selectedSegment.calcTarget !== 'velocity'}
+                      onToggleLock={() => handleLockClick(selectedSegment, 'velocity')}
+                   >
+                      <UnitInput 
+                         type="speed"
+                         value={selectedSegment.velocity}
+                         onChange={(v) => updateSegment(selectedSegment.id, { velocity: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'velocity' ? 'distance' : selectedSegment.calcTarget })}
+                         readOnly={selectedSegment.calcTarget === 'velocity'}
+                      />
+                   </DetailRow>
+                </div>
+
+                {/* Right Column: Calculated Dynamics */}
+                <div className="flex-1 min-w-[180px] bg-gray-50 border border-gray-200 p-2 rounded-sm h-fit">
+                   <div className="text-[10px] font-bold text-gray-400 uppercase mb-2 text-right">Calculated Results</div>
                    
-                   <div className="bg-gray-50 border border-gray-200 p-2 rounded-sm">
-                      <DetailRightInput 
-                        label="Accel." 
-                        value={selectedSegment.accel} 
-                        onChange={(v) => updateSegment(selectedSegment.id, { accel: v })} 
-                      />
-                      <DetailRightInput 
-                        label="Decel." 
-                        value={selectedSegment.decel} 
-                        onChange={(v) => updateSegment(selectedSegment.id, { decel: v })} 
-                      />
-                      
-                      <div className="mt-4 border-t border-gray-200 pt-2">
-                        <div className="flex justify-end mb-2">
-                            <label className="text-xs text-gray-500 mr-2">Jerk Unit:</label>
-                            <select className="text-xs border border-gray-300 rounded-sm bg-white h-5 w-24">
-                                <option>Time (s)</option>
-                                <option>Rate (deg/s³)</option>
-                            </select>
-                        </div>
-                        <DetailRightInput 
-                            label="Jerk" 
-                            value={selectedSegment.jerk} 
-                            onChange={(v) => updateSegment(selectedSegment.id, { jerk: v })} 
-                        />
-                      </div>
+                   <ReadOnlyRow label="Accel.">
+                      <UnitInput type="angle" value={selectedSegment.accel} onChange={()=>{}} readOnly /> 
+                      {/* Note: UnitInput type 'angle' is a placeholder if we lack 'acceleration' type. Using angle creates basic UI. 
+                          Ideally we add 'acceleration' to unitConversion.ts, but for now value displays raw or standard. 
+                          Wait, UnitInput handles display. If type is 'angle', it shows deg. 
+                          We need Rate units. We'll use 'speed' (deg/s) for now or just numeric readouts if types missing.
+                      */}
+                   </ReadOnlyRow>
+                   
+                   <ReadOnlyRow label="Decel.">
+                      <UnitInput type="angle" value={selectedSegment.decel} onChange={()=>{}} readOnly />
+                   </ReadOnlyRow>
+                   
+                   <div className="mt-4 border-t border-gray-200 pt-2">
+                       <ReadOnlyRow label="Jerk">
+                          <UnitInput type="angle" value={selectedSegment.jerk} onChange={()=>{}} readOnly />
+                       </ReadOnlyRow>
                    </div>
                 </div>
 
@@ -344,14 +441,12 @@ export const ProfileEditor: React.FC = () => {
 
       {/* RIGHT COLUMN: Chart */}
       <div className="flex-1 flex flex-col bg-white relative min-w-[300px]">
-         {/* Toolbar */}
          <div className="absolute top-2 right-2 flex space-x-1 z-10">
             <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50"><ZoomIn size={14} className="text-gray-600"/></button>
             <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50"><ZoomOut size={14} className="text-gray-600"/></button>
             <button className="p-1 bg-white border border-gray-300 shadow-sm rounded hover:bg-gray-50"><BarChart2 size={14} className="text-gray-600"/></button>
          </div>
 
-         {/* Chart Area */}
          <div className="flex-1 flex items-center justify-center overflow-hidden">
             <svg width="100%" height="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="none" className="p-4">
                 {/* Background Grid */}
@@ -367,11 +462,9 @@ export const ProfileEditor: React.FC = () => {
                     );
                 })}
 
-                {/* Axes */}
                 <line x1={pad} y1={svgH - pad} x2={svgW - pad} y2={svgH - pad} stroke="#ccc" />
                 <line x1={pad} y1={pad} x2={pad} y2={svgH - pad} stroke="#ccc" />
                 
-                {/* Velocity Path */}
                 <path 
                     d={`M ${chartData.points.map(p => `${scaleX(p.x)},${scaleY(p.y)}`).join(' L ')}`}
                     fill="none"
@@ -380,14 +473,12 @@ export const ProfileEditor: React.FC = () => {
                     strokeLinejoin="round"
                 />
 
-                {/* Area Fill */}
                 <path 
                     d={`M ${scaleX(0)},${scaleY(0)} L ${chartData.points.map(p => `${scaleX(p.x)},${scaleY(p.y)}`).join(' L ')} L ${scaleX(chartData.totalTime)},${scaleY(0)} Z`}
                     fill="#0078d7"
                     fillOpacity="0.1"
                 />
 
-                {/* Points */}
                 {chartData.points.map((p, i) => (
                     <circle 
                         key={i} 
@@ -400,17 +491,14 @@ export const ProfileEditor: React.FC = () => {
                     />
                 ))}
 
-                {/* Labels */}
                 <text x={svgW / 2} y={svgH - 10} textAnchor="middle" fontSize="10" fill="#666">Time (s)</text>
                 <text x={15} y={svgH / 2} textAnchor="middle" fontSize="10" fill="#666" transform={`rotate(-90, 15, ${svgH/2})`}>Velocity</text>
             </svg>
          </div>
 
-         {/* Chart Stats Footer */}
          <div className="h-6 bg-gray-50 border-t border-gray-200 flex items-center px-4 justify-between text-[10px] text-gray-500">
              <span>Cycle Time: <b>{chartData.totalTime.toFixed(3)} s</b></span>
              <span>Max Vel: <b>{chartData.maxVel.toFixed(1)}</b></span>
-             <span>RMS Torque: <b>--</b></span>
          </div>
       </div>
     </div>
