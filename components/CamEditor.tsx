@@ -118,6 +118,15 @@ export const CamEditor = ({
         return points;
     }, [sortedSectors]);
 
+    // Find cursor values
+    const hoverPoint = useMemo(() => {
+        if (hoverX === null || plotData.length === 0) return null;
+        // Find closest point
+        return plotData.reduce((prev, curr) => 
+            Math.abs(curr.x - hoverX) < Math.abs(prev.x - hoverX) ? curr : prev
+        );
+    }, [hoverX, plotData]);
+
     // --- Interaction Handlers ---
 
     const updateSector = (id: string, field: keyof CamSector, value: any) => {
@@ -420,15 +429,39 @@ export const CamEditor = ({
                     </div>
                     
                     {/* Status Footer */}
-                    <div className="h-6 bg-white border-t border-gray-200 px-2 flex items-center justify-between text-[10px] text-gray-500 shrink-0">
-                         <div>
-                             {hoverX !== null ? `Cursor: ${hoverX.toFixed(1)}°` : 'Ready'}
+                    <div className="h-7 bg-white border-t border-gray-200 px-2 flex items-center justify-between text-[10px] text-gray-600 shrink-0">
+                         <div className="font-mono font-medium">
+                             {hoverX !== null ? `Master: ${hoverX.toFixed(1)}°` : 'Ready'}
                          </div>
-                         <div className="flex space-x-4">
-                             <div className="flex items-center"><div className="w-2 h-2 bg-blue-600 rounded-full mr-1"></div> Pos</div>
-                             <div className="flex items-center"><div className="w-2 h-2 bg-green-600 rounded-full mr-1"></div> Vel</div>
-                             <div className="flex items-center"><div className="w-2 h-2 bg-red-600 rounded-full mr-1"></div> Acc</div>
-                             <div className="flex items-center"><div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div> Jerk</div>
+                         <div className="flex space-x-3">
+                             <div className="flex items-center">
+                                 <div className="w-2 h-2 bg-blue-600 rounded-full mr-1"></div> 
+                                 <span>P:</span>
+                                 <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-blue-700' : 'text-gray-300'}`}>
+                                     {hoverPoint ? hoverPoint.y.toFixed(2) : '---'}
+                                 </span>
+                             </div>
+                             <div className="flex items-center">
+                                 <div className="w-2 h-2 bg-green-600 rounded-full mr-1"></div> 
+                                 <span>V:</span>
+                                 <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-green-700' : 'text-gray-300'}`}>
+                                     {hoverPoint ? hoverPoint.v.toFixed(2) : '---'}
+                                 </span>
+                             </div>
+                             <div className="flex items-center">
+                                 <div className="w-2 h-2 bg-red-600 rounded-full mr-1"></div> 
+                                 <span>A:</span>
+                                 <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-red-700' : 'text-gray-300'}`}>
+                                     {hoverPoint ? hoverPoint.a.toFixed(2) : '---'}
+                                 </span>
+                             </div>
+                             <div className="flex items-center">
+                                 <div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div> 
+                                 <span>J:</span>
+                                 <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-orange-600' : 'text-gray-300'}`}>
+                                     {hoverPoint ? hoverPoint.j.toFixed(2) : '---'}
+                                 </span>
+                             </div>
                          </div>
                     </div>
                 </div>
