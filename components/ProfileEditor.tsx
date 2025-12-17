@@ -1,19 +1,19 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Plus, Trash2, ZoomIn, ZoomOut, Lock, Unlock, ChevronRight, CheckSquare, Square, RefreshCw, Upload, FileText, Link as LinkIcon, Clock, Lock as LockIcon, Activity } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Plus, Trash2, ZoomIn, ZoomOut, Lock, Unlock, ChevronRight, CheckSquare, Square, RefreshCw, Upload, FileText, Link as LinkIcon, Clock, Lock as LockIcon, Activity, ArrowRightLeft } from 'lucide-react';
 import { UnitInput } from './Common';
 
 /* --- Types --- */
 
-type SegmentType = 'Accel/Decel' | 'Trapezoid' | 'Triangle' | 'S-Curve' | 'Dwell/Traverse' | 'Sine';
+type SegmentType = 'Accel/Decel' | 'Trapezoid' | 'Triangle' | 'S-Curve' | 'Dwell/Traverse' | 'Sine' | 'Cam Profile' | 'Geared Motion';
 type CalcTarget = 'duration' | 'distance' | 'velocity';
 type ProfileType = 'Time Based' | 'Master/Follower' | 'Camming';
 
 interface MotionSegment {
   id: string;
   type: SegmentType;
-  duration: number; // In Camming, this is Master Distance
+  duration: number; // In Sync Mode, this matches Master Time
   distance: number; 
-  velocity: number; // In Camming, this is Slope (Slave/Master)
+  velocity: number; 
   startVelocity: number; 
   endVelocity: number;   
   accel: number; 
@@ -26,7 +26,7 @@ interface MotionSegment {
 
 interface TimePoint {
   t: number;
-  masterPos: number; // For X-Axis plotting in synch modes
+  masterPos: number; // Master Position (deg/mm)
   pos: number;
   vel: number;
   acc: number;
@@ -35,7 +35,7 @@ interface TimePoint {
   motorVel: number;
 }
 
-type TraceType = 'pos' | 'vel' | 'acc' | 'jerk' | 'torque' | 'motorVel';
+type TraceType = 'pos' | 'vel' | 'acc' | 'jerk' | 'torque' | 'motorVel' | 'masterPos';
 
 interface TraceConfig {
   key: TraceType;
@@ -52,14 +52,6 @@ const DEFAULT_SEGMENTS: MotionSegment[] = [
     startVelocity: 0, endVelocity: 0,
     accel: 1620, decel: 1620, jerk: 0, payload: 0,
     calcTarget: 'velocity', 
-    distUnitType: 'angle'
-  },
-  { 
-    id: '2', type: 'Dwell/Traverse', 
-    duration: 0.5, distance: 0, velocity: 0, 
-    startVelocity: 0, endVelocity: 0,
-    accel: 0, decel: 0, jerk: 0, payload: 0,
-    calcTarget: 'distance', 
     distUnitType: 'angle'
   },
 ];
@@ -106,8 +98,8 @@ const ReadOnlyRow = ({ label, children }: { label: string, children?: React.Reac
 const cycloidal = (t: number, beta: number, h: number) => {
     // s = h * ( t/beta - 1/2pi * sin(2pi * t/beta) )
     const ratio = t / beta;
-    if (ratio < 0) return { s: 0, v: 0, a: 0 };
-    if (ratio > 1) return { s: h, v: 0, a: 0 }; // Dwell at end
+    if (ratio <= 0) return { s: 0, v: 0, a: 0 };
+    if (ratio >= 1) return { s: h, v: 0, a: 0 }; 
 
     const pos = h * (ratio - (1 / (2 * Math.PI)) * Math.sin(2 * Math.PI * ratio));
     // v = h/beta * (1 - cos(2pi * ratio))
@@ -123,51 +115,60 @@ const simulateMotion = (
     motorRatio: number, 
     totalInertia: number, 
     profileType: ProfileType, 
-    masterSpeed: number, 
+    simMasterDist: number, 
+    simMasterTime: number,
     gearRatio: number
 ): TimePoint[] => {
   const points: TimePoint[] = [];
-  const dt = 0.01; 
-  let currentT = 0;
-  let currentPos = 0;
+  
+  // Dynamic dt based on total time to ensure good resolution without performance hit
+  const targetPoints = 400;
 
-  // 1. CAMMING SIMULATION (Cycloidal Table)
+  // 1. CAMMING SIMULATION
   if (profileType === 'Camming') {
-      const cycleMasterDeg = 360; 
-      const effectiveMasterSpeed = masterSpeed > 0 ? masterSpeed : 60; // deg/s
-      const cycleTime = cycleMasterDeg / effectiveMasterSpeed; // Time for one master rev
+      const cycleTime = simMasterTime > 0 ? simMasterTime : 1;
+      const masterTotalDist = simMasterDist;
+      const dt = cycleTime / targetPoints;
       
-      const steps = Math.ceil(cycleTime / dt);
+      // We assume a standard "3-Point" Cam logic over the cycle
+      const p1 = 0.1 * masterTotalDist; // Start Rise
+      const p2 = 0.5 * masterTotalDist; // End Rise
+      const p3 = 0.6 * masterTotalDist; // Start Return
+      const p4 = 1.0 * masterTotalDist; // End Return
+
+      // To match Master/Follower magnitude, we scale lift by gearRatio relative to Master Dist
+      const lift = masterTotalDist * gearRatio; 
       
-      // Define a Dummy Cam Table: Rise 0-180, Return 180-360
-      const riseAngle = 180;
-      const lift = 100; // mm or deg
-      
-      for (let i = 0; i <= steps; i++) {
+      const masterVel = masterTotalDist / cycleTime; // Constant Master Velocity (Linear approximation for Indexer)
+
+      for (let i = 0; i <= targetPoints; i++) {
          const t = i * dt;
-         const masterPos = t * effectiveMasterSpeed;
+         const masterPos = (t / cycleTime) * masterTotalDist;
          
          let s = 0, v = 0, a = 0;
 
-         if (masterPos <= riseAngle) {
-             // Rise Phase (Cycloidal)
-             // Duration in time = riseAngle / speed
-             const beta = riseAngle / effectiveMasterSpeed;
-             const res = cycloidal(t, beta, lift);
+         if (masterPos < p1) {
+             s = 0; v=0; a=0;
+         } else if (masterPos < p2) {
+             const distInPhase = masterPos - p1;
+             const phaseLen = p2 - p1;
+             const phaseTime = phaseLen / masterVel;
+             const res = cycloidal(distInPhase / masterVel, phaseTime, lift);
              s = res.s;
              v = res.v;
              a = res.a;
-         } else if (masterPos <= 360) {
-             // Return Phase (Cycloidal from lift to 0)
-             const t_local = t - (riseAngle/effectiveMasterSpeed);
-             const beta = (360 - riseAngle) / effectiveMasterSpeed;
-             const res = cycloidal(t_local, beta, -lift); // Negative lift
+         } else if (masterPos < p3) {
+             s = lift; v=0; a=0;
+         } else if (masterPos <= p4) {
+             const distInPhase = masterPos - p3;
+             const phaseLen = p4 - p3;
+             const phaseTime = phaseLen / masterVel;
+             const res = cycloidal(distInPhase / masterVel, phaseTime, -lift);
              s = lift + res.s;
              v = res.v;
              a = res.a;
          } else {
-             // Past 360
-             s = 0; v = 0; a = 0;
+             s = 0; v=0; a=0;
          }
 
          const damping = 0.01;
@@ -187,39 +188,84 @@ const simulateMotion = (
       return points;
   }
 
-  // 2. MASTER/FOLLOWER SIMULATION (Linear Gearing)
+  // 2. MASTER/FOLLOWER SIMULATION (Geared Motion)
+  // To show a realistic graph, we must assume the Master moves with a profile (e.g. Trapezoid)
+  // rather than an impossible infinite-jerk step.
   if (profileType === 'Master/Follower') {
-      const cycleMasterDeg = 360; 
-      const effectiveMasterSpeed = masterSpeed > 0 ? masterSpeed : 60;
-      const cycleTime = cycleMasterDeg / effectiveMasterSpeed;
+      const cycleTime = simMasterTime > 0 ? simMasterTime : 10;
+      const masterTotalDist = simMasterDist;
+      const dt = cycleTime / targetPoints;
       
-      const steps = Math.ceil(cycleTime / dt);
-      
-      // Constant Velocity Move
-      // Pos = MasterPos * GearRatio
-      // Vel = MasterVel * GearRatio
-      const slaveVel = effectiveMasterSpeed * gearRatio;
+      // Define Virtual Master Profile: Trapezoidal 1/3, 1/3, 1/3
+      // This gives visual accel/decel phases.
+      const t_acc = cycleTime / 3;
+      const t_flat = cycleTime / 3;
+      const t_dec = cycleTime / 3;
 
-      for (let i = 0; i <= steps; i++) {
+      // Peak Velocity of Master
+      // Area = Dist = V_peak * (t_flat + 0.5*t_acc + 0.5*t_dec) -> Dist = V_peak * 2/3 * T
+      const masterVPeak = masterTotalDist / ( (2/3) * cycleTime );
+      const masterAcc = masterVPeak / t_acc;
+      const masterDec = masterVPeak / t_dec;
+
+      for (let i = 0; i <= targetPoints; i++) {
           const t = i * dt;
-          const masterPos = t * effectiveMasterSpeed;
-          const slavePos = masterPos * gearRatio;
+          
+          let m_s = 0, m_v = 0, m_a = 0;
+
+          if (t < t_acc) {
+              // Accel
+              m_a = masterAcc;
+              m_v = m_a * t;
+              m_s = 0.5 * m_a * t * t;
+          } else if (t < t_acc + t_flat) {
+              // Constant
+              const t_local = t - t_acc;
+              const s_acc = 0.5 * masterAcc * t_acc * t_acc;
+              m_a = 0;
+              m_v = masterVPeak;
+              m_s = s_acc + (masterVPeak * t_local);
+          } else if (t <= cycleTime) {
+              // Decel
+              const t_local = t - (t_acc + t_flat);
+              const s_acc = 0.5 * masterAcc * t_acc * t_acc;
+              const s_flat = masterVPeak * t_flat;
+              const s_prev = s_acc + s_flat;
+              
+              m_a = -masterDec;
+              m_v = masterVPeak - (masterDec * t_local);
+              m_s = s_prev + (masterVPeak * t_local) - (0.5 * masterDec * t_local * t_local);
+          } else {
+              // End
+              m_s = masterTotalDist;
+              m_v = 0;
+              m_a = 0;
+          }
+
+          // Apply Gear Ratio to Master States
+          const slavePos = m_s * gearRatio;
+          const slaveVel = m_v * gearRatio;
+          const slaveAcc = m_a * gearRatio;
           
           points.push({
               t: t,
-              masterPos: masterPos,
+              masterPos: m_s,
               pos: slavePos,
               vel: slaveVel,
-              acc: 0, // Constant speed = 0 accel
+              acc: slaveAcc,
               jerk: 0,
-              torque: 0 + (0.01 * slaveVel), // Just friction
+              torque: (totalInertia * slaveAcc) + (0.01 * slaveVel),
               motorVel: slaveVel * motorRatio
           });
       }
       return points;
   }
 
-  // 3. TIME BASED SIMULATION (Standard)
+  // 3. TIME BASED SIMULATION
+  const dt = 0.01; 
+  let currentT = 0;
+  let currentPos = 0;
+
   segments.forEach(seg => {
     const duration = seg.duration;
     const steps = Math.max(2, Math.ceil(duration / dt));
@@ -264,7 +310,6 @@ const simulateMotion = (
                 v = targetV + a * t_dec_local;
             }
         } else {
-             // Simple linear interp for other types in this demo
              v = (seg.distance / duration);
              a = 0;
         }
@@ -276,7 +321,7 @@ const simulateMotion = (
 
         points.push({
             t: currentT + t_local,
-            masterPos: 0, // Not applicable
+            masterPos: 0,
             pos: currentPos,
             vel: v,
             acc: a,
@@ -294,13 +339,11 @@ const simulateMotion = (
 
 // Process Raw CSV Data
 const processImportedData = (rawData: {t: number, pos: number}[], motorRatio: number, totalInertia: number): TimePoint[] => {
-    // (Existing import logic remains same)
     if (rawData.length === 0) return [];
     rawData.sort((a, b) => a.t - b.t);
     const points: TimePoint[] = [];
     const tempV: number[] = new Array(rawData.length).fill(0);
     const tempA: number[] = new Array(rawData.length).fill(0);
-    const tempJ: number[] = new Array(rawData.length).fill(0);
 
     for (let i = 0; i < rawData.length; i++) {
         if (i === 0) {
@@ -357,8 +400,9 @@ export const ProfileEditor = ({
   const [cursorTime, setCursorTime] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Master Settings (for Camming)
-  const [masterSpeed, setMasterSpeed] = useState<number>(60); // e.g., 60 deg/sec or rpm
+  // Simulation Settings
+  const [simMasterDist, setSimMasterDist] = useState<number>(360);
+  const [simMasterTime, setSimMasterTime] = useState<number>(10);
 
   // Chart Trace Config
   const [traces, setTraces] = useState<TraceConfig[]>([
@@ -368,12 +412,23 @@ export const ProfileEditor = ({
     { key: 'jerk', label: 'Jerk', color: '#f59e0b', unit: 'deg/s³', active: false },
     { key: 'torque', label: 'Est. Torque', color: '#8b5cf6', unit: 'Nm', active: false },
     { key: 'motorVel', label: 'Motor Speed', color: '#ec4899', unit: 'rpm', active: false },
+    { key: 'masterPos', label: 'Master Pos', color: '#9ca3af', unit: 'deg', active: false },
   ]);
 
   const [motorRatio, setMotorRatio] = useState<number>(10);
 
+  const isMasterFollower = profileType === 'Master/Follower';
+  const isCamming = profileType === 'Camming';
+  const isSyncMode = isMasterFollower || isCamming;
+
+  // Ensure Master Trace is visible in Sync Modes automatically (UX improvement)
+  useEffect(() => {
+      if (isSyncMode) {
+          setTraces(prev => prev.map(t => t.key === 'masterPos' ? { ...t, active: true } : t));
+      }
+  }, [isSyncMode]);
+
   // --- Sequence Logic ---
-  // (Segments logic is skipped if in Master/Camming mode, but function retained for Time Based)
   const solveSegment = (seg: MotionSegment, startV: number): MotionSegment => {
     let { duration, distance, velocity, type, calcTarget } = seg;
     let accel = 0, decel = 0, jerk = 0;
@@ -501,10 +556,8 @@ export const ProfileEditor = ({
       const reader = new FileReader();
       reader.onload = (event) => {
           const text = event.target?.result as string;
-          // Simple parsing: split by line, split by comma. Expected: time, pos
           const lines = text.split('\n');
           const raw: {t: number, pos: number}[] = [];
-          
           lines.forEach(line => {
               const parts = line.trim().split(/[,;|\t]+/);
               if (parts.length >= 2) {
@@ -515,8 +568,6 @@ export const ProfileEditor = ({
                   }
               }
           });
-
-          // Process
           const processed = processImportedData(raw, motorRatio, 0.05);
           setImportedData(processed);
       };
@@ -528,28 +579,41 @@ export const ProfileEditor = ({
   const toggleTrace = (key: TraceType) => {
       setTraces(prev => prev.map(t => t.key === key ? { ...t, active: !t.active } : t));
   };
-
-  // -- Master Follower Logic --
-  // If Master/Follower is active, we don't rely on 'activeSegments' for visual calculation
-  // we use the simulateMotion function directly which handles the types.
-  const isMasterFollower = profileType === 'Master/Follower';
-  const isCamming = profileType === 'Camming';
-  const isSyncMode = isMasterFollower || isCamming;
-
-  const selectedSegment = isSyncMode ? segments[0] : (segments.find(s => s.id === selectedId) || segments[0]);
   
   const gridData = useMemo(() => {
+      // In Sync Mode, we force the table to reflect the Simulation Master Parameters
+      // to ensure UI consistency ("Time is equal").
+      if (isSyncMode) {
+          const dist = simMasterDist * gearRatio;
+          const dur = simMasterTime > 0 ? simMasterTime : 10;
+          return [{
+              ...segments[0],
+              type: isCamming ? 'Cam Profile' : 'Geared (Trapezoid Ref)',
+              duration: dur,
+              distance: dist,
+              absPos: dist,
+              velocity: dist / dur, // Avg velocity
+              endVelocity: dist / dur,
+              startVelocity: 0
+          } as MotionSegment & { absPos: number }];
+      }
+
       let absPos = 0;
       return segments.map(s => {
           absPos += s.distance;
           return { ...s, absPos };
       });
-  }, [segments]);
+  }, [segments, isSyncMode, simMasterTime, simMasterDist, gearRatio, isCamming]);
+
+  // Select the appropriate segment for the Details Panel
+  const selectedSegment = isSyncMode 
+      ? gridData[0] 
+      : (segments.find(s => s.id === selectedId) ? { ...segments.find(s => s.id === selectedId)!, absPos: gridData.find(g => g.id === selectedId)?.absPos || 0 } : gridData[0]);
 
   const timeSeries = useMemo(() => {
       if (mode === 'import') return importedData;
-      return simulateMotion(segments, motorRatio, 0.05, profileType, masterSpeed, gearRatio);
-  }, [segments, motorRatio, mode, importedData, profileType, masterSpeed, gearRatio]);
+      return simulateMotion(segments, motorRatio, 0.05, profileType, simMasterDist, simMasterTime, gearRatio);
+  }, [segments, motorRatio, mode, importedData, profileType, simMasterDist, simMasterTime, gearRatio]);
 
   const analysis = useMemo(() => {
      const res: Record<TraceType, { min: number, max: number, avg: number, rms: number }> = {} as any;
@@ -573,30 +637,18 @@ export const ProfileEditor = ({
 
   const totalTime = timeSeries.length > 0 ? timeSeries[timeSeries.length - 1].t : 0;
   
-  // For Sync modes, the X axis maximum is 360 (Master cycle) usually, or we use time for internal plotting
-  // but label it differently.
-  // simulateMotion returns 't' (time).
-  // If Sync Mode, X Axis Max = timeSeries[end].masterPos or 360.
-  const xDomainMax = isSyncMode ? 360 : totalTime;
+  // X-Axis is always TIME. 
+  // In Sync Modes, this MUST be the SimMasterTime to ensure chart fills 100% of the defined cycle.
+  const xDomainMax = isSyncMode ? simMasterTime : totalTime; 
 
-  // Find cursor values
+  // Find cursor values (Cursor is also mapped to Time)
   const cursorPoint = useMemo(() => {
      if (cursorTime === null || timeSeries.length === 0) return null;
-     // Find closest point by TIME (since cursorTime is mapped from mouse X to time/masterPos domain)
-     
-     if (isSyncMode) {
-         // cursorTime here is actually MasterPosition
-         const closest = timeSeries.reduce((prev, curr) => 
-            Math.abs(curr.masterPos - cursorTime) < Math.abs(prev.masterPos - cursorTime) ? curr : prev
-         );
-         return closest;
-     } else {
-         const closest = timeSeries.reduce((prev, curr) => 
-            Math.abs(curr.t - cursorTime) < Math.abs(prev.t - cursorTime) ? curr : prev
-         );
-         return closest;
-     }
-  }, [cursorTime, timeSeries, isSyncMode]);
+     const closest = timeSeries.reduce((prev, curr) => 
+        Math.abs(curr.t - cursorTime) < Math.abs(prev.t - cursorTime) ? curr : prev
+     );
+     return closest;
+  }, [cursorTime, timeSeries]);
 
   // --- SVG Scaling ---
   const svgW = 600;
@@ -604,10 +656,8 @@ export const ProfileEditor = ({
   const padX = 40;
   const padY = 20;
 
-  // Scale Function: Maps Input (Time or MasterPos) to Screen X
+  // Scale Function: Maps Time to Screen X
   const scaleX = (val: number) => {
-      // If Sync Mode, val is Master Pos (0-360)
-      // If Time Mode, val is Time (0-TotalTime)
       const max = xDomainMax || 1;
       return padX + (val / max) * (svgW - 2 * padX);
   };
@@ -629,13 +679,10 @@ export const ProfileEditor = ({
       if (timeSeries.length === 0) return '';
       const scaleYLocal = getScaleYLocal(key);
       return timeSeries.map((p, i) => {
-        // X Coordinate: Use MasterPos if Sync, else Time
-        const xVal = isSyncMode ? p.masterPos : p.t;
-        return `${i === 0 ? 'M' : 'L'} ${scaleX(xVal).toFixed(1)},${scaleYLocal(p[key]).toFixed(1)}`
+        return `${i === 0 ? 'M' : 'L'} ${scaleX(p.t).toFixed(1)},${scaleYLocal(p[key]).toFixed(1)}`
       }).join(' ');
   };
 
-  // Improved Cursor Handler using SVG Matrix
   const handleGraphMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
       const svg = svgRef.current;
       if (!svg) return;
@@ -647,10 +694,8 @@ export const ProfileEditor = ({
       const svgP = point.matrixTransform(svg.getScreenCTM()?.inverse());
       const plotWidth = svgW - 2 * padX;
       
-      // Normalized 0-1
       const ratio = (svgP.x - padX) / plotWidth;
       
-      // Map to Domain
       let val = ratio * xDomainMax;
       val = Math.max(0, Math.min(xDomainMax, val));
       
@@ -661,8 +706,8 @@ export const ProfileEditor = ({
       setCursorTime(null);
   };
 
-  const xLabel = isSyncMode ? "Master Position" : "Time";
-  const xUnit = isSyncMode ? "(deg)" : "(s)";
+  const xLabel = "Time";
+  const xUnit = "(s)";
   
   const durationLabel = isSyncMode ? "Master Range" : "Duration";
   const velocityLabel = isSyncMode ? "Slope (Ratio)" : "Velocity";
@@ -729,7 +774,7 @@ export const ProfileEditor = ({
                 <div className="grid grid-cols-[24px_110px_60px_70px_1fr_24px] bg-gray-200 border-b border-gray-300 font-semibold text-gray-700 py-1 shrink-0">
                     <div className="text-center">#</div>
                     <div className="px-1 border-l border-gray-300">Type</div>
-                    <div className="px-1 border-l border-gray-300 text-right">{isSyncMode ? 'M.Dist' : 'Time'}</div>
+                    <div className="px-1 border-l border-gray-300 text-right">{isSyncMode ? 'M.Time' : 'Time'}</div>
                     <div className="px-1 border-l border-gray-300 text-right">End Pos</div>
                     <div className="px-1 border-l border-gray-300 text-right">V End</div>
                     <div></div>
@@ -748,27 +793,33 @@ export const ProfileEditor = ({
                                 {selectedId === seg.id ? <ChevronRight size={12} className="text-black"/> : (idx + 1)}
                             </div>
                             <div className="p-0.5 border-r border-gray-200">
-                                <select 
-                                    className="w-full bg-transparent outline-none focus:bg-white text-xs"
-                                    value={seg.type}
-                                    onChange={(e) => updateSegment(seg.id, { type: e.target.value as SegmentType })}
-                                >
-                                    <option>Accel/Decel</option>
-                                    <option>Trapezoid</option>
-                                    <option>Triangle</option>
-                                    <option>Dwell/Traverse</option>
-                                    <option>S-Curve</option>
-                                    <option>Sine</option>
-                                </select>
+                                {isSyncMode ? (
+                                     <div className="px-1 italic text-gray-500">{seg.type}</div>
+                                ) : (
+                                    <select 
+                                        className="w-full bg-transparent outline-none focus:bg-white text-xs"
+                                        value={seg.type}
+                                        onChange={(e) => updateSegment(seg.id, { type: e.target.value as SegmentType })}
+                                    >
+                                        <option>Accel/Decel</option>
+                                        <option>Trapezoid</option>
+                                        <option>Triangle</option>
+                                        <option>Dwell/Traverse</option>
+                                        <option>S-Curve</option>
+                                        <option>Sine</option>
+                                    </select>
+                                )}
                             </div>
                             <div className="p-1 text-right border-r border-gray-200 truncate">{seg.duration.toFixed(3)}</div>
                             <div className="p-1 text-right border-r border-gray-200 truncate">{seg.absPos.toFixed(1)}</div>
                             <div className="p-1 text-right border-r border-gray-200 truncate">{seg.endVelocity.toFixed(1)}</div>
                             
                             <div className="flex items-center justify-center">
-                                <button onClick={(e) => { e.stopPropagation(); removeSegment(seg.id); }} className="text-gray-400 hover:text-red-500">
-                                    <Trash2 size={12} />
-                                </button>
+                                {!isSyncMode && (
+                                    <button onClick={(e) => { e.stopPropagation(); removeSegment(seg.id); }} className="text-gray-400 hover:text-red-500">
+                                        <Trash2 size={12} />
+                                    </button>
+                                )}
                             </div>
                         </div>
                     ))}
@@ -781,9 +832,9 @@ export const ProfileEditor = ({
                       <h3 className="font-bold text-gray-700">Sequence Editor Locked</h3>
                       <p className="text-gray-500 mt-2">
                         {isCamming ? (
-                           "Motion follows the selected Cam Table points. To modify the profile, edit the Cam Table."
+                           "Motion follows the selected Cam Table points relative to the defined Master Cycle."
                         ) : (
-                           "Motion is strictly geared to the Master Axis. Pos = Master * Ratio."
+                           "Motion matches the Master's Cycle scaled by the Gear Ratio."
                         )}
                       </p>
                    </div>
@@ -796,14 +847,14 @@ export const ProfileEditor = ({
                         <div className="flex-1 min-w-[160px]">
                         <DetailRow 
                             label={durationLabel}
-                            locked={selectedSegment.calcTarget !== 'duration'}
-                            onToggleLock={() => handleLockClick(selectedSegment, 'duration')}
+                            locked={isSyncMode || selectedSegment.calcTarget !== 'duration'}
+                            onToggleLock={() => !isSyncMode && handleLockClick(selectedSegment, 'duration')}
                         >
                             <UnitInput 
-                                type={isSyncMode ? "angle" : "time"} // In Camming, X is Angle (Master)
+                                type={isSyncMode ? "time" : "time"} // In Sync mode, we explicitly show TIME to match master
                                 value={selectedSegment.duration}
-                                onChange={(v) => updateSegment(selectedSegment.id, { duration: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'duration' ? 'velocity' : selectedSegment.calcTarget })}
-                                readOnly={selectedSegment.calcTarget === 'duration'}
+                                onChange={(v) => !isSyncMode && updateSegment(selectedSegment.id, { duration: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'duration' ? 'velocity' : selectedSegment.calcTarget })}
+                                readOnly={isSyncMode || selectedSegment.calcTarget === 'duration'}
                             />
                         </DetailRow>
 
@@ -821,15 +872,15 @@ export const ProfileEditor = ({
                             </div>
                             <div className="flex items-center">
                                 <LockButton 
-                                    locked={selectedSegment.calcTarget !== 'distance'} 
-                                    onClick={() => handleLockClick(selectedSegment, 'distance')} 
+                                    locked={isSyncMode || selectedSegment.calcTarget !== 'distance'} 
+                                    onClick={() => !isSyncMode && handleLockClick(selectedSegment, 'distance')} 
                                 />
-                                <div className={`flex-1 ${selectedSegment.calcTarget === 'distance' ? 'opacity-80' : ''}`}>
+                                <div className={`flex-1 ${(isSyncMode || selectedSegment.calcTarget === 'distance') ? 'opacity-80' : ''}`}>
                                     <UnitInput 
                                         type={selectedSegment.distUnitType}
                                         value={selectedSegment.distance}
-                                        onChange={(v) => updateSegment(selectedSegment.id, { distance: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'distance' ? 'velocity' : selectedSegment.calcTarget })}
-                                        readOnly={selectedSegment.calcTarget === 'distance'}
+                                        onChange={(v) => !isSyncMode && updateSegment(selectedSegment.id, { distance: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'distance' ? 'velocity' : selectedSegment.calcTarget })}
+                                        readOnly={isSyncMode || selectedSegment.calcTarget === 'distance'}
                                     />
                                 </div>
                             </div>
@@ -837,15 +888,15 @@ export const ProfileEditor = ({
 
                         <DetailRow 
                             label={velocityLabel}
-                            locked={selectedSegment.calcTarget !== 'velocity'}
-                            onToggleLock={() => handleLockClick(selectedSegment, 'velocity')}
+                            locked={isSyncMode || selectedSegment.calcTarget !== 'velocity'}
+                            onToggleLock={() => !isSyncMode && handleLockClick(selectedSegment, 'velocity')}
                             disabledLock={selectedSegment.type === 'Dwell/Traverse'}
                         >
                             <UnitInput 
-                                type={isSyncMode ? "ratio" : "speed"}
+                                type={isSyncMode ? "speed" : "speed"} // In Sync mode, shows avg speed
                                 value={selectedSegment.velocity}
-                                onChange={(v) => updateSegment(selectedSegment.id, { velocity: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'velocity' ? 'distance' : selectedSegment.calcTarget })}
-                                readOnly={selectedSegment.calcTarget === 'velocity' || selectedSegment.type === 'Dwell/Traverse'}
+                                onChange={(v) => !isSyncMode && updateSegment(selectedSegment.id, { velocity: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'velocity' ? 'distance' : selectedSegment.calcTarget })}
+                                readOnly={isSyncMode || selectedSegment.calcTarget === 'velocity' || selectedSegment.type === 'Dwell/Traverse'}
                             />
                         </DetailRow>
 
@@ -853,7 +904,7 @@ export const ProfileEditor = ({
                             <UnitInput 
                                 type="torque"
                                 value={selectedSegment.payload}
-                                onChange={(v) => updateSegment(selectedSegment.id, { payload: parseFloat(v) })}
+                                onChange={(v) => !isSyncMode && updateSegment(selectedSegment.id, { payload: parseFloat(v) })}
                             />
                         </DetailRow>
                         </div>
@@ -957,17 +1008,28 @@ export const ProfileEditor = ({
                />
             </div>
 
-            {/* Master Speed Sim (Visible Only in Camming) */}
+            {/* Master Settings (Visible Only in Sync Modes) */}
             {isSyncMode && (
-                <div className="flex items-center space-x-1 bg-purple-50 border border-purple-200 rounded px-1">
+                <div className="flex items-center space-x-1 bg-purple-50 border border-purple-200 rounded px-1 ml-2">
                     <Clock size={10} className="text-purple-600"/>
-                    <span className="text-[10px] text-purple-700 font-semibold">Master Vel:</span>
+                    <span className="text-[10px] text-purple-700 font-semibold ml-1">Master Cycle:</span>
+                    
+                    <span className="text-[10px] text-gray-500 ml-1">Dist:</span>
                     <input 
                         type="number" 
                         className="w-10 h-5 text-[10px] border border-purple-200 px-1 text-purple-900" 
-                        value={masterSpeed} 
-                        onChange={(e) => setMasterSpeed(parseFloat(e.target.value))} 
+                        value={simMasterDist} 
+                        onChange={(e) => setSimMasterDist(parseFloat(e.target.value))} 
                     />
+                    
+                    <span className="text-[10px] text-gray-500 ml-1">Time:</span>
+                    <input 
+                        type="number" 
+                        className="w-10 h-5 text-[10px] border border-purple-200 px-1 text-purple-900" 
+                        value={simMasterTime} 
+                        onChange={(e) => setSimMasterTime(parseFloat(e.target.value))} 
+                    />
+                    <span className="text-[10px] text-purple-700">s</span>
                 </div>
             )}
          </div>
@@ -1052,6 +1114,12 @@ export const ProfileEditor = ({
          <div className="h-32 bg-gray-50 border-t border-gray-300 flex flex-col shrink-0">
              <div className="px-2 py-1 bg-gray-100 border-b border-gray-200 text-[10px] font-bold text-gray-600 uppercase flex justify-between items-center">
                  <span>Analyzer</span>
+                 {isSyncMode && cursorPoint && (
+                     <div className="flex items-center space-x-1 text-purple-700">
+                         <Clock size={10} />
+                         <span>Master: {cursorPoint.masterPos.toFixed(1)}°</span>
+                     </div>
+                 )}
                  <RefreshCw size={10} className="cursor-pointer hover:text-blue-600" />
              </div>
              <div className="flex-1 overflow-auto">
