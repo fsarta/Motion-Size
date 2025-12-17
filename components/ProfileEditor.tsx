@@ -202,22 +202,26 @@ const simulateMotion = (
         });
         
         const totalCamMasterDist = cumM || 360; // Normalize cycle
+        const totalCamSlaveDist = cumS; // Total slave movement per cycle
 
         return masterPoints.map((mp, i) => {
-            // Normalize master pos to cam cycle
-            let mPos = mp.pos % totalCamMasterDist;
-            if (mPos < 0) mPos += totalCamMasterDist;
+            // Determine Cycle Count and Local Position
+            // This handles the "wrapping" correctly so slave position accumulates if totalCamSlaveDist != 0
+            const cycleIndex = Math.floor(mp.pos / totalCamMasterDist);
+            let mPosLocal = mp.pos % totalCamMasterDist;
+            if (mPosLocal < 0) mPosLocal += totalCamMasterDist;
 
-            // Find segment
-            const activeSeg = camMap.find(c => mPos >= c.startM && mPos <= c.endM) || camMap[camMap.length - 1];
+            // Find segment using strict bounds, falling back to last if at very end
+            const activeSeg = camMap.find(c => mPosLocal >= c.startM && mPosLocal < c.endM) || camMap[camMap.length - 1];
             
             // Evaluate Position
-            const localM = mPos - activeSeg.startM;
+            const localM = mPosLocal - activeSeg.startM;
             const relativeS = evaluateCamSegment(activeSeg.seg, localM);
-            const sPos = activeSeg.startS + relativeS;
+            
+            // Absolute Slave Pos = (Full Cycles * DistPerCycle) + (StartOfSegment + SegmentRise)
+            const sPos = (cycleIndex * totalCamSlaveDist) + activeSeg.startS + relativeS;
 
-            // Numerical Differentiation for V and A (Chain rule implies V_s = (ds/dm) * V_m)
-            // But discrete diff is robust enough for visualizer
+            // Numerical Differentiation for V and A
             let sVel = 0;
             let sAcc = 0;
             
@@ -441,7 +445,8 @@ export const ProfileEditor = ({
   const isMasterFollower = profileType === 'Master/Follower';
   const isCamming = profileType === 'Camming';
   const isSyncMode = isMasterFollower || isCamming;
-  const isLockedProfile = isMasterFollower; // Only Master/Follower is strictly locked
+  // Change: Lock profile for both Master/Follower and Camming
+  const isLockedProfile = isMasterFollower || isCamming;
 
   // Master Segments parsing (if available)
   const masterSegments: MotionSegment[] = useMemo(() => {
@@ -905,15 +910,24 @@ export const ProfileEditor = ({
                         ))}
                         
                         {/* Overlay for Locked State (Only for Master/Follower, NOT Camming) */}
-                        {isMasterFollower && (
+                        {(isMasterFollower || isCamming) && (
                            <div className="absolute top-10 left-10 right-10 p-4 bg-white/95 border border-gray-300 shadow-lg text-center backdrop-blur-sm z-10 flex flex-col items-center justify-center">
                               <LockIcon size={24} className="text-gray-400 mb-2"/>
-                              <div className="font-bold text-gray-700">Profile Locked to Master</div>
+                              <div className="font-bold text-gray-700">
+                                  {isCamming ? "Profile Driven by Cam Table" : "Profile Locked to Master"}
+                              </div>
                               <div className="text-gray-500 mt-1">
-                                 {masterSegments.length > 0 ? (
-                                     <span>Tracking {masterSegments.length} segment(s) from Master. Scaled by ratio {gearRatio}.</span>
+                                 {isCamming ? (
+                                     <span>
+                                        Slave motion is determined by the selected Cam Table geometry <br/>
+                                        and the Master's position. Edit the Cam Table to change motion.
+                                     </span>
                                  ) : (
-                                     <span>No Master profile found. Using Virtual Master cycle ({cycleTime}s).</span>
+                                     masterSegments.length > 0 ? (
+                                         <span>Tracking {masterSegments.length} segment(s) from Master. Scaled by ratio {gearRatio}.</span>
+                                     ) : (
+                                         <span>No Master profile found. Using Virtual Master cycle ({cycleTime}s).</span>
+                                     )
                                  )}
                               </div>
                            </div>
