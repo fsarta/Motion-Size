@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Ribbon } from './components/Ribbon';
 import { TreeView } from './components/TreeView';
@@ -34,8 +35,24 @@ const App = () => {
   const [clipboard, setClipboard] = useState<{ node: TreeNode, isCut: boolean } | null>(null);
 
   const [camTables, setCamTables] = useState<CamTable[]>([
-    { id: 'Cam_1', name: 'RotaryShear_3' },
-    { id: 'Cam_2', name: 'FlyingSaw_1' }
+    { 
+        id: 'Cam_1', 
+        name: 'RotaryShear_3', 
+        masterRange: 360, 
+        sectors: [
+            { id: '1', masterStart: 0, masterEnd: 90, slaveStart: 0, slaveEnd: 30, law: 'Poly5' },
+            { id: '2', masterStart: 90, masterEnd: 270, slaveStart: 30, slaveEnd: 30, law: 'Straight Line' }, // Dwell
+            { id: '3', masterStart: 270, masterEnd: 360, slaveStart: 30, slaveEnd: 0, law: 'Poly5' }
+        ]
+    },
+    { 
+        id: 'Cam_2', 
+        name: 'FlyingSaw_1',
+        masterRange: 360,
+        sectors: [
+             { id: '1', masterStart: 0, masterEnd: 360, slaveStart: 0, slaveEnd: 100, law: 'Modified Sine' }
+        ]
+    }
   ]);
   const [isCamManagerOpen, setIsCamManagerOpen] = useState(false);
   
@@ -460,11 +477,15 @@ const App = () => {
 
   /* --- Cam Table Handlers --- */
   const handleAddCam = (name: string) => {
-    setCamTables(prev => [...prev, { id: `Cam_${Date.now()}`, name }]);
+    setCamTables(prev => [...prev, { id: `Cam_${Date.now()}`, name, masterRange: 360, sectors: [] }]);
   };
 
   const handleDeleteCam = (id: string) => {
     setCamTables(prev => prev.filter(c => c.id !== id));
+  };
+  
+  const handleUpdateCam = (updated: CamTable) => {
+      setCamTables(prev => prev.map(c => c.id === updated.id ? updated : c));
   };
 
   const selectedNode = findNode(data, selectedNodeId) || data[0];
@@ -483,6 +504,7 @@ const App = () => {
         camTables={camTables}
         onAdd={handleAddCam}
         onDelete={handleDeleteCam}
+        onUpdateTable={handleUpdateCam}
       />
 
       <Ribbon 

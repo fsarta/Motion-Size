@@ -1,3 +1,4 @@
+
 export type NodeType = 'group' | 'axis' | 'mechanism' | 'gearbox' | 'motor_drive';
 
 export interface TreeNode {
@@ -10,9 +11,22 @@ export interface TreeNode {
   parameters?: Record<string, string | number | boolean>;
 }
 
+export type CamMotionLaw = 'Straight Line' | 'Poly5' | 'Sine' | 'Modified Sine' | 'Modified Trapezoid';
+
+export interface CamSector {
+  id: string;
+  masterStart: number; // x start
+  masterEnd: number;   // x end
+  slaveStart: number;  // y start
+  slaveEnd: number;    // y end
+  law: CamMotionLaw;
+}
+
 export interface CamTable {
   id: string;
   name: string;
+  masterRange: number; // e.g. 360
+  sectors: CamSector[];
 }
 
 export interface DriveData {
