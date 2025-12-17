@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Table, Plus, Trash2, X, Edit3 } from 'lucide-react';
 import { CamTable } from '../../types';
 import { CamEditor } from '../CamEditor';
+import { ConfirmationModal } from './ConfirmationModal';
 
 export const CamTableManagerModal = ({ 
     isOpen, 
@@ -21,6 +22,9 @@ export const CamTableManagerModal = ({
 }) => {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  
+  // Delete Confirmation State
+  const [tableToDelete, setTableToDelete] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -31,15 +35,36 @@ export const CamTableManagerModal = ({
     }
   };
 
+  const confirmDelete = () => {
+      if (tableToDelete) {
+          onDelete(tableToDelete);
+          if (selectedTableId === tableToDelete) {
+              setSelectedTableId(null);
+          }
+          setTableToDelete(null);
+      }
+  };
+
   // Select first table by default if none selected
   if (!selectedTableId && camTables.length > 0) {
       setSelectedTableId(camTables[0].id);
   }
 
   const activeTable = camTables.find(c => c.id === selectedTableId);
+  const tableToDeleteName = camTables.find(c => c.id === tableToDelete)?.name || 'Table';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+       <ConfirmationModal
+          isOpen={!!tableToDelete}
+          title="Confirm Delete"
+          message={<p>Are you sure you want to delete Cam Table <br/><span className="font-bold">"{tableToDeleteName}"</span>?</p>}
+          variant="danger"
+          confirmLabel="Delete"
+          onConfirm={confirmDelete}
+          onCancel={() => setTableToDelete(null)}
+       />
+
        <div className="bg-win-bg border border-gray-500 shadow-2xl w-[90vw] h-[90vh] font-sans text-xs flex flex-col rounded-sm overflow-hidden">
           
           {/* Header */}
@@ -70,13 +95,14 @@ export const CamTableManagerModal = ({
                             `}
                         >
                            <div className="font-medium">{cam.name}</div>
-                           {selectedTableId === cam.id && (
-                               <Trash2 
-                                    size={14} 
-                                    className="text-gray-400 hover:text-red-600"
-                                    onClick={(e) => { e.stopPropagation(); onDelete(cam.id); }} 
-                               />
-                           )}
+                           <Trash2 
+                                size={14} 
+                                className={`hover:text-red-600 ${selectedTableId === cam.id ? 'text-gray-400' : 'text-gray-300 group-hover:text-gray-400'}`}
+                                onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    setTableToDelete(cam.id); 
+                                }} 
+                           />
                         </div>
                       ))}
                   </div>

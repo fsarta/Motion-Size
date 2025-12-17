@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Trash2, ZoomIn, ZoomOut, Maximize, Activity, Save, RefreshCw, Layers, Layout } from 'lucide-react';
 import { CamTable, CamSector, CamMotionLaw } from '../types';
+import { ConfirmationModal } from './modals/ConfirmationModal';
 
 // --- Math Engines for Motion Laws ---
 
@@ -72,6 +73,7 @@ export const CamEditor = ({
     const [isStacked, setIsStacked] = useState(false);
     const [hoverX, setHoverX] = useState<number | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
 
     // Ensure sectors are sorted
     const sortedSectors = useMemo(() => {
@@ -156,6 +158,12 @@ export const CamEditor = ({
     const removeSector = (id: string) => {
         if (camTable.sectors.length <= 1) return;
         onChange({ ...camTable, sectors: camTable.sectors.filter(s => s.id !== id) });
+    };
+
+    const handleSaveConfirm = () => {
+        // Logic to finalize save would go here (e.g. API call)
+        // Since state is updated via onChange in real-time, this is symbolic or "commit"
+        setIsSaveConfirmOpen(false);
     };
 
     // --- Graph Rendering Helpers ---
@@ -265,6 +273,16 @@ export const CamEditor = ({
 
     return (
         <div className="flex flex-col h-full bg-gray-100">
+            <ConfirmationModal 
+                isOpen={isSaveConfirmOpen}
+                title="Confirm Save"
+                message={<p>Do you want to save changes to cam table <br/><span className="font-bold">"{camTable.name}"</span>?</p>}
+                variant="info"
+                confirmLabel="Save"
+                onConfirm={handleSaveConfirm}
+                onCancel={() => setIsSaveConfirmOpen(false)}
+            />
+
             {/* Toolbar */}
             <div className="h-10 bg-white border-b border-gray-300 flex items-center px-4 justify-between shrink-0">
                 <div className="flex items-center space-x-4">
@@ -294,7 +312,10 @@ export const CamEditor = ({
                          </button>
                      </div>
 
-                     <button className="flex items-center px-3 py-1 bg-blue-600 text-white text-xs rounded shadow hover:bg-blue-700">
+                     <button 
+                        onClick={() => setIsSaveConfirmOpen(true)}
+                        className="flex items-center px-3 py-1 bg-blue-600 text-white text-xs rounded shadow hover:bg-blue-700"
+                     >
                          <Save size={12} className="mr-1"/> Save Table
                      </button>
                 </div>
