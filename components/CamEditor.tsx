@@ -438,28 +438,28 @@ export const CamEditor = ({
                                  <div className="w-2 h-2 bg-blue-600 rounded-full mr-1"></div> 
                                  <span>P:</span>
                                  <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-blue-700' : 'text-gray-300'}`}>
-                                     {hoverPoint ? hoverPoint.y.toFixed(2) : '---'}
+                                     {hoverPoint ? hoverPoint.y.toFixed(4) : '---'}
                                  </span>
                              </div>
                              <div className="flex items-center">
                                  <div className="w-2 h-2 bg-green-600 rounded-full mr-1"></div> 
                                  <span>V:</span>
                                  <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-green-700' : 'text-gray-300'}`}>
-                                     {hoverPoint ? hoverPoint.v.toFixed(2) : '---'}
+                                     {hoverPoint ? hoverPoint.v.toFixed(4) : '---'}
                                  </span>
                              </div>
                              <div className="flex items-center">
                                  <div className="w-2 h-2 bg-red-600 rounded-full mr-1"></div> 
                                  <span>A:</span>
                                  <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-red-700' : 'text-gray-300'}`}>
-                                     {hoverPoint ? hoverPoint.a.toFixed(2) : '---'}
+                                     {hoverPoint ? hoverPoint.a.toFixed(4) : '---'}
                                  </span>
                              </div>
                              <div className="flex items-center">
                                  <div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div> 
                                  <span>J:</span>
                                  <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-orange-600' : 'text-gray-300'}`}>
-                                     {hoverPoint ? hoverPoint.j.toFixed(2) : '---'}
+                                     {hoverPoint ? hoverPoint.j.toFixed(4) : '---'}
                                  </span>
                              </div>
                          </div>
