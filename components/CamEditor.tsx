@@ -60,6 +60,17 @@ interface CamPoint {
 
 type GraphType = 'pos' | 'vel' | 'acc' | 'jerk';
 
+// Helper for engineering notation
+const formatEng = (val: number) => {
+    if (val === 0) return "0.0000";
+    const abs = Math.abs(val);
+    // Use scientific notation for very small (< 0.001) or very large (> 10000) numbers
+    if (abs < 0.001 || abs >= 10000) {
+        return val.toExponential(4); // e.g. 1.2345e-5
+    }
+    return val.toFixed(4); // e.g. 123.4567
+};
+
 export const CamEditor = ({ 
     camTable, 
     onChange 
@@ -438,28 +449,28 @@ export const CamEditor = ({
                                  <div className="w-2 h-2 bg-blue-600 rounded-full mr-1"></div> 
                                  <span>P:</span>
                                  <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-blue-700' : 'text-gray-300'}`}>
-                                     {hoverPoint ? hoverPoint.y.toFixed(4) : '---'}
+                                     {hoverPoint ? formatEng(hoverPoint.y) : '---'}
                                  </span>
                              </div>
                              <div className="flex items-center">
                                  <div className="w-2 h-2 bg-green-600 rounded-full mr-1"></div> 
                                  <span>V:</span>
                                  <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-green-700' : 'text-gray-300'}`}>
-                                     {hoverPoint ? hoverPoint.v.toFixed(4) : '---'}
+                                     {hoverPoint ? formatEng(hoverPoint.v) : '---'}
                                  </span>
                              </div>
                              <div className="flex items-center">
                                  <div className="w-2 h-2 bg-red-600 rounded-full mr-1"></div> 
                                  <span>A:</span>
                                  <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-red-700' : 'text-gray-300'}`}>
-                                     {hoverPoint ? hoverPoint.a.toFixed(4) : '---'}
+                                     {hoverPoint ? formatEng(hoverPoint.a) : '---'}
                                  </span>
                              </div>
                              <div className="flex items-center">
                                  <div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div> 
                                  <span>J:</span>
                                  <span className={`ml-1 font-mono font-bold ${hoverPoint ? 'text-orange-600' : 'text-gray-300'}`}>
-                                     {hoverPoint ? hoverPoint.j.toFixed(4) : '---'}
+                                     {hoverPoint ? formatEng(hoverPoint.j) : '---'}
                                  </span>
                              </div>
                          </div>
