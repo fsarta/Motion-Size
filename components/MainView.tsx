@@ -32,10 +32,9 @@ export const WorkArea = ({
       );
   }
 
-  // Extract axes from the tree structure for visualizer
+  // Find the active group based on selection
   const rootNode = data.find(n => n.id === 'root');
   
-  // Find the active group based on selection
   let activeGroup = rootNode;
   if (selectedNode) {
      const findGroup = (nodes: TreeNode[]): TreeNode | null => {
@@ -60,24 +59,19 @@ export const WorkArea = ({
   const axes = activeGroup?.children?.filter(n => n.icon === 'axis') || [];
   
   // -- Calculate Available Masters --
-  // Traverse entire tree to find all axes.
-  // Format: "GroupName > AxisName"
   const availableMasters = useMemo(() => {
      const masters: string[] = [];
-     
      const traverse = (nodes: TreeNode[], groupName: string) => {
         nodes.forEach(node => {
             if (node.type === 'group') {
                traverse(node.children || [], node.label);
             } else if (node.type === 'axis') {
-               // Exclude self if selected
                if (node.id !== selectedNode.id) {
                    masters.push(`${groupName} > ${node.label}`);
                }
             }
         });
      };
-
      traverse(data, "");
      return masters;
   }, [data, selectedNode.id]);
@@ -93,8 +87,6 @@ export const WorkArea = ({
   };
 
   const renderFormContent = () => {
-    // We add a key to the component to force re-render when selectedNode changes, 
-    // ensuring defaultValues are updated from the new params.
     switch (selectedNode.type) {
       case 'group': return <React.Fragment key={selectedNode.id}><PowerGroupForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
       case 'mechanism': return <React.Fragment key={selectedNode.id}><MechanismForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
@@ -116,17 +108,49 @@ export const WorkArea = ({
   const profileType = params.profileType || 'Time Based';
   
   // Extract Gearing Info
-  const masterAxisName = String(params.masterAxis || 'Virtual Master');
+  const masterAxisFullName = String(params.masterAxis || 'Virtual Master');
+  const masterAxisName = masterAxisFullName.includes('>') ? masterAxisFullName.split('>')[1].trim() : masterAxisFullName;
+  
   const gearNum = parseFloat(String(params.gearRatioNum || '1'));
   const gearDen = parseFloat(String(params.gearRatioDen || '1'));
-  const gearRatio = gearDen !== 0 ? gearNum / gearDen : 1;
+  const gearRatio = (gearDen !== 0 && !isNaN(gearDen) && !isNaN(gearNum)) ? gearNum / gearDen : 1;
+  
+  // Extract Global Cycle Time from Root Node safely
+  let cycleTime = 10;
+  if (rootNode && rootNode.parameters && rootNode.parameters.cycleTime) {
+      const val = parseFloat(String(rootNode.parameters.cycleTime));
+      if (!isNaN(val) && val > 0) cycleTime = val;
+  }
+
+  // --- Find Master Node Data ---
+  // To simulate the Slave correctly, we need the Master's Motion Profile segments.
+  const masterProfileData = useMemo(() => {
+     if (masterAxisFullName === 'Virtual Master') return null;
+     
+     // Scan tree to find the node with label == masterAxisName
+     // Simple search (assuming unique names or taking first match)
+     let foundData: string | null = null;
+     
+     const search = (nodes: TreeNode[]) => {
+        for (const node of nodes) {
+           if (node.type === 'axis' && node.label === masterAxisName) {
+               if (node.parameters && node.parameters.motionProfileData) {
+                   foundData = String(node.parameters.motionProfileData);
+               }
+               return;
+           }
+           if (node.children) search(node.children);
+        }
+     };
+     search(data);
+     return foundData;
+  }, [data, masterAxisFullName, masterAxisName]);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
       {selectedNode.type === 'group' && <Visualizer axes={axes} />}
       
       <div className="flex-1 bg-win-bg p-2 overflow-y-auto flex flex-col min-h-0">
-        {/* Toolbar for the form */}
         <div className="flex space-x-1 mb-3 shrink-0">
            <button className="p-1 border border-gray-300 bg-white hover:bg-gray-50 shadow-sm rounded-sm"><Settings2 size={16} className="text-orange-600" /></button>
            <button className="p-1 border border-gray-300 bg-white hover:bg-gray-50 shadow-sm rounded-sm"><Play size={16} className="text-blue-600" /></button>
@@ -159,6 +183,10 @@ export const WorkArea = ({
                 profileType={profileType as any} 
                 masterAxisName={masterAxisName}
                 gearRatio={gearRatio}
+                cycleTime={cycleTime}
+                savedProfileData={params.motionProfileData ? String(params.motionProfileData) : null}
+                masterProfileData={masterProfileData}
+                onProfileChange={(json) => handleNodeUpdate({ motionProfileData: json })}
               />
             </div>
           ) : (

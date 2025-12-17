@@ -8,7 +8,7 @@ type SegmentType = 'Accel/Decel' | 'Trapezoid' | 'Triangle' | 'S-Curve' | 'Dwell
 type CalcTarget = 'duration' | 'distance' | 'velocity';
 type ProfileType = 'Time Based' | 'Master/Follower' | 'Camming';
 
-interface MotionSegment {
+export interface MotionSegment {
   id: string;
   type: SegmentType;
   duration: number; // Matches Cycle Time
@@ -93,87 +93,74 @@ const ReadOnlyRow = ({ label, children }: { label: string, children?: React.Reac
 
 // --- Math / Simulation Helpers ---
 
-// Helper: Cycloidal Motion (Standard for Cams)
-// h = height (distance), beta = duration (angle or time)
-const cycloidal = (t: number, beta: number, h: number) => {
-    // s = h * ( t/beta - 1/2pi * sin(2pi * t/beta) )
-    const ratio = t / beta;
-    if (ratio <= 0) return { s: 0, v: 0, a: 0 };
-    if (ratio >= 1) return { s: h, v: 0, a: 0 }; 
-
-    const pos = h * (ratio - (1 / (2 * Math.PI)) * Math.sin(2 * Math.PI * ratio));
-    // v = h/beta * (1 - cos(2pi * ratio))
-    const vel = (h / beta) * (1 - Math.cos(2 * Math.PI * ratio));
-    // a = 2pi*h / beta^2 * sin(2pi * ratio)
-    const acc = (2 * Math.PI * h / (beta * beta)) * Math.sin(2 * Math.PI * ratio);
-
-    return { s: pos, v: vel, a: acc };
-};
-
 const simulateMotion = (
     segments: MotionSegment[], 
     motorRatio: number, 
     totalInertia: number, 
     profileType: ProfileType, 
-    gearRatio: number
+    gearRatio: number,
+    cycleTime: number,
+    masterSegments: MotionSegment[] = []
 ): TimePoint[] => {
   const points: TimePoint[] = [];
   
-  const isCamming = profileType === 'Camming';
+  const isSyncMode = profileType === 'Master/Follower' || profileType === 'Camming';
 
-  // 1. CAMMING SIMULATION (Special Case)
-  if (isCamming) {
-      // Use the duration of the first segment as the Cycle Time
-      const cycleTime = segments[0].duration > 0 ? segments[0].duration : 1;
-      const masterTotalDist = 360; // Standard Master Cycle
-      const targetPoints = 400;
-      const dt = cycleTime / targetPoints;
+  // If we are in Sync Mode AND we have Master Segments, we simulate using the Master's profile
+  // scaled by the Gear Ratio. This ensures perfect time synchronization and shape matching.
+  let activeSegments = segments;
+  
+  if (isSyncMode && masterSegments.length > 0) {
+      // Map Master Segments to Slave Segments (Geared)
+      activeSegments = masterSegments.map(s => ({
+          ...s,
+          distance: s.distance * gearRatio,
+          velocity: s.velocity * gearRatio,
+          startVelocity: s.startVelocity * gearRatio,
+          endVelocity: s.endVelocity * gearRatio,
+          accel: s.accel * gearRatio,
+          decel: s.decel * gearRatio,
+          jerk: s.jerk * gearRatio
+          // duration remains identical to master
+      }));
+  } else if (isSyncMode) {
+      // FALLBACK: If no master segments found (or Virtual Master), we create a synthetic 
+      // full-cycle profile to represent the "Virtual" motion scaled by ratio.
+      // Usually Virtual Master is a constant velocity 0-360 deg over cycle time.
+      const dur = (Number.isFinite(cycleTime) && cycleTime > 0) ? cycleTime : 10;
+      const masterDist = 360; 
+      const slaveDist = masterDist * gearRatio;
       
-      const lift = segments[0].distance; // Lift defined in segment
-      
-      const masterVel = masterTotalDist / cycleTime; 
-
-      // Simple Cycloidal Rise for demo
-      for (let i = 0; i <= targetPoints; i++) {
-         const t = i * dt;
-         const masterPos = (t / cycleTime) * masterTotalDist;
-         
-         const res = cycloidal(t, cycleTime, lift);
-         const s = res.s;
-         const v = res.v;
-         const a = res.a;
-
-         const damping = 0.01;
-         const torque = (totalInertia * a) + (damping * v);
-
-         points.push({
-             t: t,
-             masterPos: masterPos,
-             pos: s,
-             vel: v,
-             acc: a,
-             jerk: 0,
-             torque: torque,
-             motorVel: v * motorRatio
-         });
-      }
-      return points;
+      activeSegments = [{
+          id: 'virt',
+          type: 'Dwell/Traverse', // Constant Velocity
+          duration: dur,
+          distance: slaveDist,
+          velocity: slaveDist / dur,
+          startVelocity: slaveDist / dur,
+          endVelocity: slaveDist / dur,
+          accel: 0,
+          decel: 0,
+          jerk: 0,
+          payload: 0,
+          calcTarget: 'distance',
+          distUnitType: 'angle'
+      }];
   }
 
-  // 2. STANDARD SIMULATION (Time Based AND Master/Follower)
-  // For Master/Follower, we treat the segment definition as the "Slave Profile" 
-  // and back-calculate the Master position based on ratio.
+  // STANDARD SIMULATION (Iterate through segments)
   const dt = 0.01; 
   let currentT = 0;
   let currentPos = 0;
+  let currentMasterPos = 0;
 
-  segments.forEach(seg => {
-    const duration = seg.duration;
+  activeSegments.forEach(seg => {
+    const duration = seg.duration > 0 ? seg.duration : 0.01; 
     const steps = Math.max(2, Math.ceil(duration / dt));
     const realDt = duration / steps;
     let t_local = 0;
     
-    // Trapezoid Params
+    // Trapezoid Params (used if type is Trapezoid)
     const t_acc = duration / 3;
     const t_dec = duration / 3;
     const t_flat = duration - t_acc - t_dec;
@@ -189,14 +176,19 @@ const simulateMotion = (
         let j = 0;
 
         if (seg.type === 'Dwell/Traverse') {
-            v = targetV; 
-            a = 0;
+            v = targetV; // Or interpolate startV -> targetV if slope needed? usually constant V
+            if (seg.startVelocity !== seg.endVelocity && seg.startVelocity !== undefined) {
+                 // Linear ramp (Traverse)
+                 v = seg.startVelocity + ((seg.endVelocity - seg.startVelocity) * (t_local/duration));
+                 a = (seg.endVelocity - seg.startVelocity) / duration;
+            } else {
+                 a = 0;
+            }
         } else if (seg.type === 'Accel/Decel') {
             v = startV + slope * t_local;
             a = slope;
         } else if (seg.type === 'Trapezoid') {
             if (t_local < t_acc) {
-                // Ramp up
                 const accVal = Math.abs(targetV / t_acc) * (targetV > 0 ? 1 : -1);
                 a = accVal;
                 v = a * t_local;
@@ -204,13 +196,25 @@ const simulateMotion = (
                 a = 0;
                 v = targetV;
             } else {
-                // Ramp down
                 const decVal = Math.abs(targetV / t_dec) * (targetV > 0 ? -1 : 1);
                 a = decVal;
                 const t_dec_local = t_local - (t_acc + t_flat);
                 v = targetV + a * t_dec_local;
             }
+        } else if (seg.type === 'Triangle') {
+            const t_half = duration / 2;
+             if (t_local < t_half) {
+                const accVal = Math.abs(targetV / t_half) * (targetV > 0 ? 1 : -1);
+                a = accVal;
+                v = a * t_local;
+             } else {
+                const decVal = Math.abs(targetV / t_half) * (targetV > 0 ? -1 : 1);
+                a = decVal;
+                const t_dec_local = t_local - t_half;
+                v = targetV + a * t_dec_local;
+             }
         } else {
+             // Fallback linear
              v = (seg.distance / duration);
              a = 0;
         }
@@ -220,15 +224,15 @@ const simulateMotion = (
         const damping = 0.01;
         const torque = (totalInertia * a) + seg.payload + (damping * v);
 
-        // Master Position Calculation
-        // If Gearing 10:1 (Ratio=10), Motor moves 3600 for Load 360.
-        // Usually visualizers show Input vs Output. 
-        // Here we show Master Ref (Input) vs Slave (Output).
-        // Let's assume gearRatio is Input/Output.
-        // So MasterPos = SlavePos * Ratio.
-        // Wait, normally Slave FOLLOWS Master. S = M / Ratio.
-        // So M = S * Ratio.
-        const masterP = currentPos * (gearRatio || 1);
+        // Calculate Master Pos for trace
+        let masterP = 0;
+        if (isSyncMode) {
+            // In sync mode, Master = Slave / Ratio
+            masterP = gearRatio !== 0 ? currentPos / gearRatio : 0;
+        } else {
+            // In Time Based, we can just show 0 or a virtual ramp for reference
+            masterP = 0;
+        }
 
         points.push({
             t: currentT + t_local,
@@ -290,11 +294,19 @@ const processImportedData = (rawData: {t: number, pos: number}[], motorRatio: nu
 export const ProfileEditor = ({ 
   profileType = 'Time Based',
   masterAxisName = 'Virtual Master',
-  gearRatio = 1.0
+  gearRatio = 1.0,
+  cycleTime = 10,
+  savedProfileData,
+  masterProfileData,
+  onProfileChange
 }: { 
   profileType?: ProfileType,
   masterAxisName?: string,
-  gearRatio?: number
+  gearRatio?: number,
+  cycleTime?: number,
+  savedProfileData?: string | null,
+  masterProfileData?: string | null,
+  onProfileChange?: (jsonData: string) => void
 }) => {
   // Mode: Sequence Editor vs CSV Import
   const [mode, setMode] = useState<'sequence' | 'import'>('sequence');
@@ -302,6 +314,33 @@ export const ProfileEditor = ({
   // Sequence Data
   const [segments, setSegments] = useState<MotionSegment[]>(DEFAULT_SEGMENTS);
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_SEGMENTS[0].id);
+  
+  // Parse Saved Data on Init or Change
+  useEffect(() => {
+    if (savedProfileData) {
+        try {
+            const parsed = JSON.parse(savedProfileData);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                setSegments(parsed);
+                setSelectedId(parsed[0].id);
+                return;
+            }
+        } catch (e) {
+            console.error("Failed to parse saved profile", e);
+        }
+    } 
+    // Reset to default if no data (e.g. new axis)
+    setSegments(DEFAULT_SEGMENTS);
+    setSelectedId(DEFAULT_SEGMENTS[0].id);
+  }, [savedProfileData]);
+
+  // Handle Updates and emit change
+  const emitChange = (newSegments: MotionSegment[]) => {
+      setSegments(newSegments);
+      if (onProfileChange) {
+          onProfileChange(JSON.stringify(newSegments));
+      }
+  };
   
   // Import Data
   const [importedData, setImportedData] = useState<TimePoint[]>([]);
@@ -327,6 +366,16 @@ export const ProfileEditor = ({
   const isMasterFollower = profileType === 'Master/Follower';
   const isCamming = profileType === 'Camming';
   const isSyncMode = isMasterFollower || isCamming;
+
+  // Master Segments parsing (if available)
+  const masterSegments: MotionSegment[] = useMemo(() => {
+      if (masterProfileData) {
+          try {
+              return JSON.parse(masterProfileData);
+          } catch(e) {}
+      }
+      return [];
+  }, [masterProfileData]);
 
   // Ensure Master Trace is visible in Sync Modes automatically (UX improvement)
   useEffect(() => {
@@ -411,20 +460,18 @@ export const ProfileEditor = ({
   };
 
   const updateSegment = (id: string, updates: Partial<MotionSegment>) => {
-    setSegments(prev => {
-      const updatedList = prev.map(s => {
-        if (s.id !== id) return s;
-        const newSeg = { ...s, ...updates };
-        if (updates.calcTarget === undefined && updates.velocity !== undefined && s.calcTarget === 'velocity') {
-            newSeg.calcTarget = 'distance';
-        }
-        if (newSeg.type === 'Dwell/Traverse' && newSeg.calcTarget === 'velocity') {
-            newSeg.calcTarget = 'distance';
-        }
-        return newSeg;
-      });
-      return recalculateChain(updatedList);
+    const updatedList = segments.map(s => {
+      if (s.id !== id) return s;
+      const newSeg = { ...s, ...updates };
+      if (updates.calcTarget === undefined && updates.velocity !== undefined && s.calcTarget === 'velocity') {
+          newSeg.calcTarget = 'distance';
+      }
+      if (newSeg.type === 'Dwell/Traverse' && newSeg.calcTarget === 'velocity') {
+          newSeg.calcTarget = 'distance';
+      }
+      return newSeg;
     });
+    emitChange(recalculateChain(updatedList));
   };
 
   const handleLockClick = (seg: MotionSegment, target: CalcTarget) => {
@@ -442,14 +489,14 @@ export const ProfileEditor = ({
        calcTarget: 'distance',
        distUnitType: 'angle'
     };
-    setSegments(prev => recalculateChain([...prev, newSeg]));
+    emitChange(recalculateChain([...segments, newSeg]));
     setSelectedId(newId);
   };
 
   const removeSegment = (id: string) => {
     if (segments.length <= 1) return;
     const newSegs = segments.filter(s => s.id !== id);
-    setSegments(recalculateChain(newSegs));
+    emitChange(recalculateChain(newSegs));
     if (selectedId === id) setSelectedId(newSegs[0].id);
   };
 
@@ -488,22 +535,63 @@ export const ProfileEditor = ({
   };
   
   const gridData = useMemo(() => {
+      if (isSyncMode) {
+          // In Sync Mode, we display the segments derived from the Master
+          if (masterSegments.length > 0) {
+              let absPos = 0;
+              return masterSegments.map(s => {
+                  const scaledDist = s.distance * gearRatio;
+                  absPos += scaledDist;
+                  return {
+                      ...s,
+                      distance: scaledDist,
+                      velocity: s.velocity * gearRatio,
+                      startVelocity: s.startVelocity * gearRatio,
+                      endVelocity: s.endVelocity * gearRatio,
+                      absPos: absPos
+                  };
+              });
+          }
+
+          // Fallback to synthetic
+          const masterDist = 360; 
+          const slaveDist = masterDist * gearRatio;
+          const cycle = (Number.isFinite(cycleTime) && cycleTime > 0) ? cycleTime : 10;
+          
+          return [{
+             id: 'master-ref',
+             type: 'Geared Motion',
+             duration: cycle,
+             distance: slaveDist,
+             absPos: slaveDist,
+             velocity: slaveDist / cycle,
+             startVelocity: 0,
+             endVelocity: 0,
+             accel: 0,
+             decel: 0,
+             jerk: 0,
+             payload: 0,
+             calcTarget: 'distance',
+             distUnitType: 'angle'
+          } as MotionSegment & { absPos: number }];
+      }
+
       let absPos = 0;
       return segments.map(s => {
           absPos += s.distance;
           return { ...s, absPos };
       });
-  }, [segments]);
+  }, [segments, isSyncMode, cycleTime, gearRatio, masterSegments]);
 
   // Select the appropriate segment for the Details Panel
-  const selectedSegment = segments.find(s => s.id === selectedId) 
-    ? { ...segments.find(s => s.id === selectedId)!, absPos: gridData.find(g => g.id === selectedId)?.absPos || 0 } 
-    : gridData[0];
+  const selectedSegment = isSyncMode
+    ? gridData[0]
+    : (segments.find(s => s.id === selectedId) ? { ...segments.find(s => s.id === selectedId)!, absPos: gridData.find(g => g.id === selectedId)?.absPos || 0 } : gridData[0]);
 
   const timeSeries = useMemo(() => {
       if (mode === 'import') return importedData;
-      return simulateMotion(segments, motorRatio, 0.05, profileType, gearRatio);
-  }, [segments, motorRatio, mode, importedData, profileType, gearRatio]);
+      return simulateMotion(segments, motorRatio, 0.05, profileType, gearRatio, cycleTime, masterSegments);
+  }, [segments, motorRatio, mode, importedData, profileType, gearRatio, cycleTime, masterSegments]);
 
   const analysis = useMemo(() => {
      const res: Record<TraceType, { min: number, max: number, avg: number, rms: number }> = {} as any;
@@ -651,84 +739,100 @@ export const ProfileEditor = ({
         {mode === 'sequence' && (
             <>
                 {/* Grid */}
-                <div className={`h-[40%] flex flex-col bg-white`}>
-                <div className="h-7 bg-gray-50 border-b border-gray-300 flex items-center px-2 space-x-2 shrink-0">
-                    <button onClick={addSegment} className="flex items-center px-2 py-0.5 bg-white border border-gray-300 rounded shadow-sm hover:bg-blue-50 text-xs text-gray-700">
-                        <Plus size={12} className="mr-1 text-green-600"/> Add Step
-                    </button>
-                </div>
-                
-                <div className="grid grid-cols-[24px_110px_60px_70px_1fr_24px] bg-gray-200 border-b border-gray-300 font-semibold text-gray-700 py-1 shrink-0">
-                    <div className="text-center">#</div>
-                    <div className="px-1 border-l border-gray-300">Type</div>
-                    <div className="px-1 border-l border-gray-300 text-right">{isSyncMode ? 'Cycle Time' : 'Time'}</div>
-                    <div className="px-1 border-l border-gray-300 text-right">End Pos</div>
-                    <div className="px-1 border-l border-gray-300 text-right">V End</div>
-                    <div></div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto bg-white">
-                    {gridData.map((seg, idx) => (
-                        <div 
-                            key={seg.id}
-                            onClick={() => setSelectedId(seg.id)}
-                            className={`grid grid-cols-[24px_110px_60px_70px_1fr_24px] border-b border-gray-100 items-center cursor-pointer hover:bg-blue-50
-                                ${selectedId === seg.id ? 'bg-blue-100' : ''}
+                <div className={`h-[40%] flex flex-col bg-white relative`}>
+                    <div className="h-7 bg-gray-50 border-b border-gray-300 flex items-center px-2 space-x-2 shrink-0">
+                        <button 
+                            onClick={addSegment} 
+                            disabled={isSyncMode}
+                            className={`flex items-center px-2 py-0.5 border border-gray-300 rounded shadow-sm text-xs 
+                                ${isSyncMode ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white hover:bg-blue-50 text-gray-700'}
                             `}
                         >
-                            <div className="flex items-center justify-center text-gray-500 h-full border-r border-gray-200 bg-gray-50">
-                                {selectedId === seg.id ? <ChevronRight size={12} className="text-black"/> : (idx + 1)}
-                            </div>
-                            <div className="p-0.5 border-r border-gray-200">
-                                {isSyncMode ? (
-                                     <div className="px-1 italic text-gray-500">{seg.type}</div>
-                                ) : (
-                                    <select 
-                                        className="w-full bg-transparent outline-none focus:bg-white text-xs"
-                                        value={seg.type}
-                                        onChange={(e) => updateSegment(seg.id, { type: e.target.value as SegmentType })}
-                                    >
-                                        <option>Accel/Decel</option>
-                                        <option>Trapezoid</option>
-                                        <option>Triangle</option>
-                                        <option>Dwell/Traverse</option>
-                                        <option>S-Curve</option>
-                                        <option>Sine</option>
-                                    </select>
-                                )}
-                            </div>
-                            <div className="p-1 text-right border-r border-gray-200 truncate">{seg.duration.toFixed(3)}</div>
-                            <div className="p-1 text-right border-r border-gray-200 truncate">{seg.absPos.toFixed(1)}</div>
-                            <div className="p-1 text-right border-r border-gray-200 truncate">{seg.endVelocity.toFixed(1)}</div>
-                            
-                            <div className="flex items-center justify-center">
-                                {!isSyncMode && (
-                                    <button onClick={(e) => { e.stopPropagation(); removeSegment(seg.id); }} className="text-gray-400 hover:text-red-500">
-                                        <Trash2 size={12} />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                </div>
+                            <Plus size={12} className={`mr-1 ${isSyncMode ? 'text-gray-400' : 'text-green-600'}`}/> Add Step
+                        </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-[24px_110px_60px_70px_1fr_24px] bg-gray-200 border-b border-gray-300 font-semibold text-gray-700 py-1 shrink-0">
+                        <div className="text-center">#</div>
+                        <div className="px-1 border-l border-gray-300">Type</div>
+                        <div className="px-1 border-l border-gray-300 text-right">{isSyncMode ? 'Cycle Time' : 'Time'}</div>
+                        <div className="px-1 border-l border-gray-300 text-right">End Pos</div>
+                        <div className="px-1 border-l border-gray-300 text-right">V End</div>
+                        <div></div>
+                    </div>
 
-                {isSyncMode && (
-                   <div className="bg-yellow-50 text-yellow-800 p-2 text-[10px] border-t border-yellow-200 flex items-center justify-center shrink-0">
-                      <LockIcon size={10} className="mr-1"/>
-                      <span>Sequence defines SLAVE motion. Master is calculated via Gear Ratio.</span>
-                   </div>
-                )}
+                    <div className="flex-1 overflow-y-auto bg-white relative">
+                        {gridData.map((seg, idx) => (
+                            <div 
+                                key={seg.id}
+                                onClick={() => !isSyncMode && setSelectedId(seg.id)}
+                                className={`grid grid-cols-[24px_110px_60px_70px_1fr_24px] border-b border-gray-100 items-center 
+                                    ${isSyncMode ? 'bg-gray-50' : 'cursor-pointer hover:bg-blue-50'}
+                                    ${!isSyncMode && selectedId === seg.id ? 'bg-blue-100' : ''}
+                                `}
+                            >
+                                <div className="flex items-center justify-center text-gray-500 h-full border-r border-gray-200 bg-gray-50">
+                                    {!isSyncMode && selectedId === seg.id ? <ChevronRight size={12} className="text-black"/> : (idx + 1)}
+                                </div>
+                                <div className="p-0.5 border-r border-gray-200">
+                                    {isSyncMode ? (
+                                        <div className="px-1 italic text-gray-500">{seg.type}</div>
+                                    ) : (
+                                        <select 
+                                            className="w-full bg-transparent outline-none focus:bg-white text-xs"
+                                            value={seg.type}
+                                            onChange={(e) => updateSegment(seg.id, { type: e.target.value as SegmentType })}
+                                        >
+                                            <option>Accel/Decel</option>
+                                            <option>Trapezoid</option>
+                                            <option>Triangle</option>
+                                            <option>Dwell/Traverse</option>
+                                            <option>S-Curve</option>
+                                            <option>Sine</option>
+                                        </select>
+                                    )}
+                                </div>
+                                <div className="p-1 text-right border-r border-gray-200 truncate">{seg.duration.toFixed(3)}</div>
+                                <div className="p-1 text-right border-r border-gray-200 truncate">{seg.absPos.toFixed(1)}</div>
+                                <div className="p-1 text-right border-r border-gray-200 truncate">{seg.endVelocity.toFixed(1)}</div>
+                                
+                                <div className="flex items-center justify-center">
+                                    {!isSyncMode && (
+                                        <button onClick={(e) => { e.stopPropagation(); removeSegment(seg.id); }} className="text-gray-400 hover:text-red-500">
+                                            <Trash2 size={12} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        
+                        {/* Overlay for Locked State */}
+                        {isSyncMode && (
+                           <div className="absolute top-10 left-10 right-10 p-4 bg-white/95 border border-gray-300 shadow-lg text-center backdrop-blur-sm z-10 flex flex-col items-center justify-center">
+                              <LockIcon size={24} className="text-gray-400 mb-2"/>
+                              <div className="font-bold text-gray-700">Profile Locked to Master</div>
+                              <div className="text-gray-500 mt-1">
+                                 {masterSegments.length > 0 ? (
+                                     <span>Tracking {masterSegments.length} segment(s) from Master. Scaled by ratio {gearRatio}.</span>
+                                 ) : (
+                                     <span>No Master profile found. Using Virtual Master cycle ({cycleTime}s).</span>
+                                 )}
+                              </div>
+                           </div>
+                        )}
+                    </div>
+                </div>
 
                 {/* Details */}
-                <div className={`flex-1 bg-gray-100 border-t border-gray-300 p-4 shadow-inner overflow-y-auto`}>
+                <div className={`flex-1 bg-gray-100 border-t border-gray-300 p-4 shadow-inner overflow-y-auto ${isSyncMode ? 'opacity-80 pointer-events-none' : ''}`}>
                 {selectedSegment && (
                     <div className="flex gap-6">
                         <div className="flex-1 min-w-[160px]">
                         <DetailRow 
                             label={durationLabel}
-                            locked={selectedSegment.calcTarget !== 'duration'}
+                            locked={isSyncMode || selectedSegment.calcTarget !== 'duration'}
                             onToggleLock={() => handleLockClick(selectedSegment, 'duration')}
+                            disabledLock={isSyncMode}
                         >
                             <UnitInput 
                                 type="time"
@@ -737,7 +841,7 @@ export const ProfileEditor = ({
                                     const val = parseFloat(v);
                                     updateSegment(selectedSegment.id, { duration: val, calcTarget: selectedSegment.calcTarget === 'duration' ? 'velocity' : selectedSegment.calcTarget });
                                 }}
-                                readOnly={selectedSegment.calcTarget === 'duration'}
+                                readOnly={isSyncMode || selectedSegment.calcTarget === 'duration'}
                             />
                         </DetailRow>
 
@@ -748,6 +852,7 @@ export const ProfileEditor = ({
                                     className="text-[10px] bg-transparent border-none outline-none text-gray-500 cursor-pointer hover:text-blue-600"
                                     value={selectedSegment.distUnitType}
                                     onChange={(e) => updateSegment(selectedSegment.id, { distUnitType: e.target.value as any })}
+                                    disabled={isSyncMode}
                                 >
                                     <option value="angle">Rotary (deg, rad)</option>
                                     <option value="length">Linear (mm, m)</option>
@@ -755,8 +860,9 @@ export const ProfileEditor = ({
                             </div>
                             <div className="flex items-center">
                                 <LockButton 
-                                    locked={selectedSegment.calcTarget !== 'distance'} 
+                                    locked={isSyncMode || selectedSegment.calcTarget !== 'distance'} 
                                     onClick={() => handleLockClick(selectedSegment, 'distance')} 
+                                    disabled={isSyncMode}
                                 />
                                 <div className={`flex-1 ${(selectedSegment.calcTarget === 'distance') ? 'opacity-80' : ''}`}>
                                     <UnitInput 
@@ -766,7 +872,7 @@ export const ProfileEditor = ({
                                             const val = parseFloat(v);
                                             updateSegment(selectedSegment.id, { distance: val, calcTarget: selectedSegment.calcTarget === 'distance' ? 'velocity' : selectedSegment.calcTarget });
                                         }}
-                                        readOnly={selectedSegment.calcTarget === 'distance'}
+                                        readOnly={isSyncMode || selectedSegment.calcTarget === 'distance'}
                                     />
                                 </div>
                             </div>
@@ -774,15 +880,15 @@ export const ProfileEditor = ({
 
                         <DetailRow 
                             label={velocityLabel}
-                            locked={selectedSegment.calcTarget !== 'velocity'}
+                            locked={isSyncMode || selectedSegment.calcTarget !== 'velocity'}
                             onToggleLock={() => handleLockClick(selectedSegment, 'velocity')}
-                            disabledLock={selectedSegment.type === 'Dwell/Traverse'}
+                            disabledLock={isSyncMode || selectedSegment.type === 'Dwell/Traverse'}
                         >
                             <UnitInput 
                                 type="speed"
                                 value={selectedSegment.velocity}
                                 onChange={(v) => updateSegment(selectedSegment.id, { velocity: parseFloat(v), calcTarget: selectedSegment.calcTarget === 'velocity' ? 'distance' : selectedSegment.calcTarget })}
-                                readOnly={selectedSegment.calcTarget === 'velocity' || selectedSegment.type === 'Dwell/Traverse'}
+                                readOnly={isSyncMode || selectedSegment.calcTarget === 'velocity' || selectedSegment.type === 'Dwell/Traverse'}
                             />
                         </DetailRow>
 
@@ -791,6 +897,7 @@ export const ProfileEditor = ({
                                 type="torque"
                                 value={selectedSegment.payload}
                                 onChange={(v) => updateSegment(selectedSegment.id, { payload: parseFloat(v) })}
+                                readOnly={isSyncMode}
                             />
                         </DetailRow>
                         </div>
