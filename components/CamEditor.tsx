@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Trash2, ZoomIn, ZoomOut, Maximize, Activity, Save, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, ZoomIn, ZoomOut, Maximize, Activity, Save, RefreshCw, Layers, Layout } from 'lucide-react';
 import { CamTable, CamSector, CamMotionLaw } from '../types';
 
 // --- Math Engines for Motion Laws ---
@@ -57,6 +57,8 @@ interface CamPoint {
     j: number;
 }
 
+type GraphType = 'pos' | 'vel' | 'acc' | 'jerk';
+
 export const CamEditor = ({ 
     camTable, 
     onChange 
@@ -66,9 +68,10 @@ export const CamEditor = ({
 }) => {
     
     // --- State & Helpers ---
-    const [viewMode, setViewMode] = useState<'pos' | 'vel' | 'acc'>('pos');
+    const [viewMode, setViewMode] = useState<GraphType>('pos');
+    const [isStacked, setIsStacked] = useState(false);
     const [hoverX, setHoverX] = useState<number | null>(null);
-    const svgRef = useRef<SVGSVGElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     // Ensure sectors are sorted
     const sortedSectors = useMemo(() => {
@@ -106,7 +109,7 @@ export const CamEditor = ({
                     // For visualization, we keep them relative to geometric slope
                     v: (rangeY / rangeX) * v_norm, 
                     a: (rangeY / (rangeX*rangeX)) * a_norm, // Convexity
-                    j: j_norm // Qualitative
+                    j: (rangeY / Math.pow(rangeX, 3)) * j_norm // Qualitative Jerk
                 });
             }
         });
@@ -121,9 +124,7 @@ export const CamEditor = ({
             return s;
         });
 
-        // Auto-stitch logic: If we move End of Sector i, Start of Sector i+1 should move?
-        // For this demo, we assume contiguous editing in the Grid.
-        // A smarter editor would auto-heal gaps. Let's do a simple "Heal Next Start"
+        // Auto-stitch logic
         if (field === 'masterEnd' || field === 'slaveEnd') {
             const idx = newSectors.findIndex(s => s.id === id);
             if (idx >= 0 && idx < newSectors.length - 1) {
@@ -141,13 +142,12 @@ export const CamEditor = ({
         const newStartM = last ? last.masterEnd : 0;
         const newStartS = last ? last.slaveEnd : 0;
         
-        // Default new sector: 90 deg, same slope or flat
         const newSector: CamSector = {
             id: Date.now().toString(),
             masterStart: newStartM,
             masterEnd: Math.min(camTable.masterRange, newStartM + 90),
             slaveStart: newStartS,
-            slaveEnd: newStartS, // Dwell by default
+            slaveEnd: newStartS, 
             law: 'Poly5'
         };
         onChange({ ...camTable, sectors: [...camTable.sectors, newSector] });
@@ -159,50 +159,108 @@ export const CamEditor = ({
     };
 
     // --- Graph Rendering Helpers ---
-    const width = 600;
-    const height = 300;
-    const padding = 40;
+    const width = 600; // Internal SVG coord width
+    // Height will vary based on stacked vs single
+    const padding = 20;
 
     const xMax = camTable.masterRange;
-    const yMax = Math.max(...plotData.map(p => p.y), 10);
-    const yMin = Math.min(...plotData.map(p => p.y), 0);
     
-    // Auto-scale for derivatives
-    const vMax = Math.max(...plotData.map(p => Math.abs(p.v)), 0.1);
-    const aMax = Math.max(...plotData.map(p => Math.abs(p.a)), 0.1);
+    // Calculate global Min/Max for scaling
+    const limits = useMemo(() => {
+        if (plotData.length === 0) return { pos:[0,10], vel:[0,1], acc:[0,1], jerk:[0,1] };
+        
+        const getLimits = (arr: number[]) => {
+            let min = Math.min(...arr);
+            let max = Math.max(...arr);
+            if (max === min) { max+=1; min-=1; }
+            return [min, max];
+        };
+
+        return {
+            pos: getLimits(plotData.map(p => p.y)),
+            vel: getLimits(plotData.map(p => p.v)),
+            acc: getLimits(plotData.map(p => p.a)),
+            jerk: getLimits(plotData.map(p => p.j))
+        };
+    }, [plotData]);
 
     const scaleX = (val: number) => padding + (val / xMax) * (width - 2*padding);
     
-    const scaleY = (val: number, type: 'pos'|'vel'|'acc') => {
-        const graphH = height - 2*padding;
-        let norm = 0;
-        if (type === 'pos') {
-            const range = yMax - yMin || 1;
-            norm = (val - yMin) / range;
-        } else if (type === 'vel') {
-             norm = 0.5 + (val / (2*vMax)) * 0.8; // Centered
-        } else {
-             norm = 0.5 + (val / (2*aMax)) * 0.8;
-        }
-        return (height - padding) - (norm * graphH);
-    };
+    // Reusable Graph Render Function
+    const renderGraph = (type: GraphType, height: number, color: string, showXAxis: boolean) => {
+        const [min, max] = limits[type] as [number, number];
+        const range = max - min;
+        
+        // Scale Y to fit height with padding
+        const scaleY = (val: number) => {
+            const norm = (val - min) / range;
+            return (height - padding) - (norm * (height - 2*padding));
+        };
 
-    const getPath = (key: 'y'|'v'|'a') => {
-        if (plotData.length === 0) return "";
-        return plotData.map((p, i) => {
+        const pathD = plotData.length > 0 ? plotData.map((p, i) => {
             const x = scaleX(p.x);
-            const y = scaleY(key === 'y' ? p.y : (key === 'v' ? p.v : p.a), key === 'y' ? 'pos' : (key === 'v' ? 'vel' : 'acc'));
+            // Map type to property
+            const val = type === 'pos' ? p.y : type === 'vel' ? p.v : type === 'acc' ? p.a : p.j;
+            const y = scaleY(val);
             return `${i===0?'M':'L'} ${x.toFixed(1)},${y.toFixed(1)}`;
-        }).join(" ");
-    };
+        }).join(" ") : "";
 
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if(!svgRef.current) return;
-        const rect = svgRef.current.getBoundingClientRect();
-        const localX = e.clientX - rect.left;
-        const ratio = (localX - padding) / (width - 2*padding);
-        const masterVal = Math.max(0, Math.min(xMax, ratio * xMax));
-        setHoverX(masterVal);
+        // Zero Line Y
+        const zeroY = scaleY(0);
+
+        return (
+            <svg 
+                width="100%" height="100%" 
+                viewBox={`0 0 ${width} ${height}`} 
+                preserveAspectRatio="none"
+                className="bg-white border-b border-gray-200 block"
+                onMouseMove={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const ratio = (e.clientX - rect.left - 10) / (rect.width - 20); // Approx correction for padding
+                    // Better: reverse map ratio
+                    // Since viewBox is set, and preservedAspectRatio=none, exact mapping depends on container.
+                    // Simplified:
+                    const localX = e.clientX - rect.left;
+                    const r = localX / rect.width;
+                    setHoverX(Math.max(0, Math.min(xMax, r * xMax)));
+                }}
+                onMouseLeave={() => setHoverX(null)}
+            >
+                {/* Grid Lines */}
+                <line x1={padding} y1={padding} x2={padding} y2={height-padding} stroke="#eee" />
+                <line x1={width-padding} y1={padding} x2={width-padding} y2={height-padding} stroke="#eee" />
+                
+                {/* Zero Line (only if 0 is within range, and mostly for derivatives) */}
+                {min < 0 && max > 0 && (
+                    <line x1={padding} y1={zeroY} x2={width-padding} y2={zeroY} stroke="#ddd" strokeDasharray="4,2"/>
+                )}
+
+                {/* Path */}
+                <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>
+
+                {/* Sector Lines */}
+                {sortedSectors.map(s => {
+                    const x = scaleX(s.masterEnd);
+                    return <line key={s.id} x1={x} y1={padding} x2={x} y2={height-padding} stroke="#f3f4f6" />;
+                })}
+
+                {/* Cursor */}
+                {hoverX !== null && (
+                    <line 
+                        x1={scaleX(hoverX)} y1={padding} 
+                        x2={scaleX(hoverX)} y2={height-padding} 
+                        stroke="black" strokeDasharray="3,3" strokeWidth="1"
+                    />
+                )}
+
+                {/* Labels */}
+                <text x={padding} y={padding - 5} fontSize="10" fill={color} fontWeight="bold" className="uppercase">{type}</text>
+                
+                {showXAxis && (
+                   <text x={width/2} y={height-5} textAnchor="middle" fontSize="10" fill="#999">Master Position (deg)</text>
+                )}
+            </svg>
+        );
     };
 
     return (
@@ -218,7 +276,24 @@ export const CamEditor = ({
                          <span className="text-gray-500">deg</span>
                      </div>
                 </div>
-                <div className="flex space-x-2">
+                <div className="flex space-x-2 items-center">
+                     <div className="flex bg-gray-100 rounded p-0.5 border border-gray-300 mr-2">
+                         <button 
+                            onClick={() => setIsStacked(false)}
+                            title="Single Graph View"
+                            className={`p-1 rounded ${!isStacked ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                         >
+                             <Maximize size={14}/>
+                         </button>
+                         <button 
+                            onClick={() => setIsStacked(true)}
+                            title="Stacked Graph View"
+                            className={`p-1 rounded ${isStacked ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                         >
+                             <Layers size={14}/>
+                         </button>
+                     </div>
+
                      <button className="flex items-center px-3 py-1 bg-blue-600 text-white text-xs rounded shadow hover:bg-blue-700">
                          <Save size={12} className="mr-1"/> Save Table
                      </button>
@@ -293,78 +368,46 @@ export const CamEditor = ({
                 </div>
 
                 {/* Right: Visualization */}
-                <div className="flex-1 bg-gray-50 flex flex-col relative">
-                    <div className="absolute top-2 right-2 flex space-x-1 z-10">
-                        <button 
-                            onClick={() => setViewMode('pos')} 
-                            className={`px-2 py-1 text-[10px] font-bold border rounded ${viewMode==='pos'?'bg-blue-600 text-white border-blue-600':'bg-white text-gray-600 border-gray-300'}`}
-                        >Pos</button>
-                        <button 
-                            onClick={() => setViewMode('vel')} 
-                            className={`px-2 py-1 text-[10px] font-bold border rounded ${viewMode==='vel'?'bg-green-600 text-white border-green-600':'bg-white text-gray-600 border-gray-300'}`}
-                        >Vel</button>
-                        <button 
-                            onClick={() => setViewMode('acc')} 
-                            className={`px-2 py-1 text-[10px] font-bold border rounded ${viewMode==='acc'?'bg-red-600 text-white border-red-600':'bg-white text-gray-600 border-gray-300'}`}
-                        >Acc</button>
-                    </div>
+                <div className="flex-1 bg-gray-50 flex flex-col relative" ref={containerRef}>
+                    {!isStacked && (
+                        <div className="absolute top-2 right-2 flex space-x-1 z-10">
+                            <button onClick={() => setViewMode('pos')} className={`px-2 py-1 text-[10px] font-bold border rounded ${viewMode==='pos'?'bg-blue-600 text-white border-blue-600':'bg-white text-gray-600 border-gray-300'}`}>Pos</button>
+                            <button onClick={() => setViewMode('vel')} className={`px-2 py-1 text-[10px] font-bold border rounded ${viewMode==='vel'?'bg-green-600 text-white border-green-600':'bg-white text-gray-600 border-gray-300'}`}>Vel</button>
+                            <button onClick={() => setViewMode('acc')} className={`px-2 py-1 text-[10px] font-bold border rounded ${viewMode==='acc'?'bg-red-600 text-white border-red-600':'bg-white text-gray-600 border-gray-300'}`}>Acc</button>
+                            <button onClick={() => setViewMode('jerk')} className={`px-2 py-1 text-[10px] font-bold border rounded ${viewMode==='jerk'?'bg-orange-500 text-white border-orange-500':'bg-white text-gray-600 border-gray-300'}`}>Jerk</button>
+                        </div>
+                    )}
 
-                    <div className="flex-1 p-4">
-                        <svg 
-                            ref={svgRef}
-                            width="100%" height="100%" 
-                            viewBox={`0 0 ${width} ${height}`} 
-                            className="bg-white border border-gray-300 shadow-sm"
-                            preserveAspectRatio="none"
-                            onMouseMove={handleMouseMove}
-                            onMouseLeave={() => setHoverX(null)}
-                        >
-                            {/* Grid Lines */}
-                            <line x1={padding} y1={height-padding} x2={width-padding} y2={height-padding} stroke="#ccc" />
-                            <line x1={padding} y1={padding} x2={padding} y2={height-padding} stroke="#ccc" />
-                            
-                            {/* Zero Line for Vel/Acc */}
-                            {viewMode !== 'pos' && (
-                                <line x1={padding} y1={height/2} x2={width-padding} y2={height/2} stroke="#eee" strokeDasharray="4,2"/>
-                            )}
-
-                            {/* Curve */}
-                            <path 
-                                d={getPath(viewMode === 'pos' ? 'y' : (viewMode === 'vel' ? 'v' : 'a'))} 
-                                fill="none" 
-                                stroke={viewMode === 'pos' ? '#2563eb' : (viewMode === 'vel' ? '#16a34a' : '#dc2626')} 
-                                strokeWidth="2"
-                            />
-
-                            {/* Sector Dividers */}
-                            {sortedSectors.map(s => {
-                                const x = scaleX(s.masterEnd);
-                                return <line key={s.id} x1={x} y1={padding} x2={x} y2={height-padding} stroke="#e5e7eb" strokeDasharray="2,2" />;
-                            })}
-
-                            {/* Cursor */}
-                            {hoverX !== null && (
-                                <line 
-                                    x1={scaleX(hoverX)} y1={padding} 
-                                    x2={scaleX(hoverX)} y2={height-padding} 
-                                    stroke="black" strokeDasharray="2,2" strokeWidth="1"
-                                />
-                            )}
-                            
-                            {/* Labels */}
-                            <text x={width/2} y={height-10} textAnchor="middle" fontSize="10" fill="#666">Master Position (deg)</text>
-                        </svg>
+                    <div className="flex-1 flex flex-col p-2 h-full overflow-hidden">
+                        {isStacked ? (
+                            <>
+                                <div className="flex-1 border border-b-0 border-gray-200">{renderGraph('pos', 150, '#2563eb', false)}</div>
+                                <div className="flex-1 border border-b-0 border-gray-200">{renderGraph('vel', 150, '#16a34a', false)}</div>
+                                <div className="flex-1 border border-b-0 border-gray-200">{renderGraph('acc', 150, '#dc2626', false)}</div>
+                                <div className="flex-1 border border-gray-200">{renderGraph('jerk', 150, '#f97316', true)}</div>
+                            </>
+                        ) : (
+                            <div className="flex-1 border border-gray-300 shadow-sm bg-white">
+                                {renderGraph(
+                                    viewMode, 
+                                    400, 
+                                    viewMode==='pos'?'#2563eb':viewMode==='vel'?'#16a34a':viewMode==='acc'?'#dc2626':'#f97316',
+                                    true
+                                )}
+                            </div>
+                        )}
                     </div>
                     
                     {/* Status Footer */}
-                    <div className="h-6 bg-white border-t border-gray-200 px-2 flex items-center justify-between text-[10px] text-gray-500">
+                    <div className="h-6 bg-white border-t border-gray-200 px-2 flex items-center justify-between text-[10px] text-gray-500 shrink-0">
                          <div>
                              {hoverX !== null ? `Cursor: ${hoverX.toFixed(1)}°` : 'Ready'}
                          </div>
                          <div className="flex space-x-4">
-                             <div className="flex items-center"><div className="w-2 h-2 bg-blue-600 rounded-full mr-1"></div> Position</div>
-                             <div className="flex items-center"><div className="w-2 h-2 bg-green-600 rounded-full mr-1"></div> Velocity</div>
-                             <div className="flex items-center"><div className="w-2 h-2 bg-red-600 rounded-full mr-1"></div> Acceleration</div>
+                             <div className="flex items-center"><div className="w-2 h-2 bg-blue-600 rounded-full mr-1"></div> Pos</div>
+                             <div className="flex items-center"><div className="w-2 h-2 bg-green-600 rounded-full mr-1"></div> Vel</div>
+                             <div className="flex items-center"><div className="w-2 h-2 bg-red-600 rounded-full mr-1"></div> Acc</div>
+                             <div className="flex items-center"><div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div> Jerk</div>
                          </div>
                     </div>
                 </div>
