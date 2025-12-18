@@ -43,9 +43,9 @@ interface TraceConfig {
 
 const DEFAULT_SEGMENTS: MotionSegment[] = [
   { 
-    id: '1', type: 'Trapezoid', 
-    duration: 1.0, distance: 360, velocity: 480, 
-    accel: 1920, decel: 1920, jerk: 0, payload: 0,
+    id: '1', type: 'Dwell/Traverse', 
+    duration: 1.0, distance: 0, velocity: 0, 
+    accel: 1000, decel: 1000, jerk: 0, payload: 0,
     calcTarget: 'velocity'
   }
 ];
@@ -227,7 +227,6 @@ export const ProfileEditor = ({
       const v0 = idx > 0 ? (segments[idx-1].type === 'Accel/Decel' ? segments[idx-1].velocity : 0) : 0;
       const dv = Math.abs(updated.velocity - v0);
 
-      // Special handling for Time-based Accel/Decel/Jerk inputs
       if (entryMode === 'time') {
           if (field === 'accel' || field === 'decel') {
               const timeVal = parseFloat(value);
@@ -276,10 +275,14 @@ export const ProfileEditor = ({
     const idx = segments.findIndex(s => s.id === selectedId);
     const v0 = idx > 0 ? (segments[idx-1].type === 'Accel/Decel' ? segments[idx-1].velocity : 0) : 0;
     const dv = Math.abs((selectedSeg?.velocity || 0) - v0);
-    
     if (field === 'jerk') return (selectedSeg?.accel || 0) / val;
     return dv / val;
   };
+
+  // Determine unit filters based on posUnitType (Rotary vs Linear)
+  const speedUnits = posUnitType === 'angle' ? ['deg/s', 'rpm'] : ['mm/s', 'm/s'];
+  const accUnits = posUnitType === 'angle' ? ['deg/s²'] : ['mm/s²', 'm/s²', 'G'];
+  const jerkUnits = posUnitType === 'angle' ? ['deg/s³'] : ['mm/s³'];
 
   return (
     <div className="flex h-full border border-win-border bg-win-panel font-sans text-xs select-none">
@@ -314,8 +317,8 @@ export const ProfileEditor = ({
                         <tr>
                             <th className="p-2 border-b w-8">#</th>
                             <th className="p-2 border-b">Law</th>
-                            <th className="p-2 border-b">Time (s)</th>
-                            <th className="p-2 border-b">Position ({posUnitType === 'angle' ? 'deg' : 'mm'})</th>
+                            <th className="p-2 border-b">Abs Time (s)</th>
+                            <th className="p-2 border-b">Abs Dist ({posUnitType === 'angle' ? 'deg' : 'mm'})</th>
                             {!isReadOnly && <th className="p-2 border-b w-8"></th>}
                         </tr>
                     </thead>
@@ -359,17 +362,17 @@ export const ProfileEditor = ({
                                 onChange={e => updateSegment(selectedSeg.id, 'type', e.target.value as SegmentType)} />
                         </InputGroup>
                         <div className="h-2"></div>
-                        <InputGroup label="Duration (s)">
+                        <InputGroup label="Rel. Duration (s)">
                             <LockButton disabled={isReadOnly} locked={selectedSeg.calcTarget === 'duration'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'duration')} />
                             <UnitInput type="time" value={selectedSeg.duration} onChange={(val) => updateSegment(selectedSeg.id, 'duration', parseFloat(val))} readOnly={isReadOnly} />
                         </InputGroup>
-                        <InputGroup label={`Distance (${posUnitType === 'angle' ? 'deg' : 'mm'})`}>
+                        <InputGroup label={`Rel. Distance (${posUnitType === 'angle' ? 'deg' : 'mm'})`}>
                             <LockButton disabled={isReadOnly} locked={selectedSeg.calcTarget === 'distance'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'distance')} />
                             <UnitInput type={posUnitType} value={selectedSeg.distance} onChange={(val) => updateSegment(selectedSeg.id, 'distance', parseFloat(val))} readOnly={isReadOnly} />
                         </InputGroup>
                         <InputGroup label="End Velocity">
                             <LockButton disabled={isReadOnly} locked={selectedSeg.calcTarget === 'velocity'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'velocity')} />
-                            <UnitInput type="speed" value={selectedSeg.velocity} onChange={(val) => updateSegment(selectedSeg.id, 'velocity', parseFloat(val))} readOnly={isReadOnly} />
+                            <UnitInput type="speed" unitFilter={speedUnits} value={selectedSeg.velocity} onChange={(val) => updateSegment(selectedSeg.id, 'velocity', parseFloat(val))} readOnly={isReadOnly} />
                         </InputGroup>
                         
                         <SectionHeader title="Dynamic Limits" />
@@ -377,7 +380,7 @@ export const ProfileEditor = ({
                         <InputGroup label="Acceleration">
                             <ModeToggle mode={accelModes.acc} onToggle={() => setAccelModes({...accelModes, acc: accelModes.acc === 'value' ? 'time' : 'value'})} />
                             {accelModes.acc === 'value' ? (
-                                <UnitInput type="acceleration" value={selectedSeg.accel} onChange={(val) => updateSegment(selectedSeg.id, 'accel', parseFloat(val))} readOnly={isReadOnly} />
+                                <UnitInput type="acceleration" unitFilter={accUnits} value={selectedSeg.accel} onChange={(val) => updateSegment(selectedSeg.id, 'accel', parseFloat(val))} readOnly={isReadOnly} />
                             ) : (
                                 <UnitInput type="time" value={getTimeValue(selectedSeg.accel, 'accel')} onChange={(val) => updateSegment(selectedSeg.id, 'accel', parseFloat(val), 'time')} readOnly={isReadOnly} />
                             )}
@@ -386,7 +389,7 @@ export const ProfileEditor = ({
                         <InputGroup label="Deceleration">
                             <ModeToggle mode={accelModes.dec} onToggle={() => setAccelModes({...accelModes, dec: accelModes.dec === 'value' ? 'time' : 'value'})} />
                             {accelModes.dec === 'value' ? (
-                                <UnitInput type="acceleration" value={selectedSeg.decel} onChange={(val) => updateSegment(selectedSeg.id, 'decel', parseFloat(val))} readOnly={isReadOnly} />
+                                <UnitInput type="acceleration" unitFilter={accUnits} value={selectedSeg.decel} onChange={(val) => updateSegment(selectedSeg.id, 'decel', parseFloat(val))} readOnly={isReadOnly} />
                             ) : (
                                 <UnitInput type="time" value={getTimeValue(selectedSeg.decel, 'decel')} onChange={(val) => updateSegment(selectedSeg.id, 'decel', parseFloat(val), 'time')} readOnly={isReadOnly} />
                             )}
@@ -395,7 +398,7 @@ export const ProfileEditor = ({
                         <InputGroup label="Jerk">
                             <ModeToggle mode={accelModes.jerk} onToggle={() => setAccelModes({...accelModes, jerk: accelModes.jerk === 'value' ? 'time' : 'value'})} />
                             {accelModes.jerk === 'value' ? (
-                                <UnitInput type="jerk" value={selectedSeg.jerk} onChange={(val) => updateSegment(selectedSeg.id, 'jerk', parseFloat(val))} readOnly={isReadOnly} />
+                                <UnitInput type="jerk" unitFilter={jerkUnits} value={selectedSeg.jerk} onChange={(val) => updateSegment(selectedSeg.id, 'jerk', parseFloat(val))} readOnly={isReadOnly} />
                             ) : (
                                 <UnitInput type="time" value={getTimeValue(selectedSeg.jerk, 'jerk')} onChange={(val) => updateSegment(selectedSeg.id, 'jerk', parseFloat(val), 'time')} readOnly={isReadOnly} />
                             )}
@@ -460,7 +463,7 @@ export const ProfileEditor = ({
                 <span className="text-[10px] font-bold text-gray-700 uppercase tracking-widest">System Dynamics Analysis</span>
              </div>
              <div className="bg-white border border-win-border px-3 py-1 flex items-center space-x-2 shadow-sm">
-                <div className="text-[10px] text-gray-500 font-bold uppercase">Time:</div>
+                <div className="text-[10px] text-gray-500 font-bold uppercase">Position @ Time:</div>
                 <div className="font-mono text-win-blue font-bold text-sm">{cursorTime !== null ? cursorTime.toFixed(4) : '0.0000'} s</div>
              </div>
           </div>

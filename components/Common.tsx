@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Calculator } from 'lucide-react';
 import { 
@@ -55,23 +56,32 @@ export const Select = ({ value, options, onChange, className }: { value?: string
   </select>
 );
 
-// Advanced Input that handles Unit Selection and Auto-Conversion
 export const UnitInput = ({ 
   value, 
   onChange, 
   type, 
   readOnly,
   hasCalculator,
-  onCalculatorClick
+  onCalculatorClick,
+  unitFilter
 }: { 
   value: string | number | undefined, 
   onChange: (val: string) => void, 
   type: UnitType, 
   readOnly?: boolean,
   hasCalculator?: boolean,
-  onCalculatorClick?: () => void
+  onCalculatorClick?: () => void,
+  unitFilter?: string[]
 }) => {
-  const [currentUnit, setCurrentUnit] = useState<string>(() => getDefaultUnit(type));
+  const availableUnits = useMemo(() => {
+    const units = getUnitsForType(type);
+    if (unitFilter && unitFilter.length > 0) {
+      return units.filter(u => unitFilter.includes(u));
+    }
+    return units;
+  }, [type, unitFilter]);
+
+  const [currentUnit, setCurrentUnit] = useState<string>(() => availableUnits[0] || getDefaultUnit(type));
   const [isEditing, setIsEditing] = useState(false);
   
   const computedDisplay = useMemo(() => toDisplay(value, type, currentUnit), [value, type, currentUnit]);
@@ -82,6 +92,13 @@ export const UnitInput = ({
       setLocalValue(computedDisplay);
     }
   }, [computedDisplay, isEditing]);
+
+  // Ensure current unit is always in the filtered list if filter changes
+  useEffect(() => {
+    if (availableUnits.length > 0 && !availableUnits.includes(currentUnit)) {
+      setCurrentUnit(availableUnits[0]);
+    }
+  }, [availableUnits]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVal = e.target.value;
@@ -105,8 +122,6 @@ export const UnitInput = ({
     setIsEditing(false);
   };
 
-  const availableUnits = getUnitsForType(type);
-
   return (
     <div className="flex w-full items-center">
       <div className="relative flex-1 flex items-center">
@@ -117,18 +132,12 @@ export const UnitInput = ({
           onBlur={handleBlur}
           onFocus={handleFocus}
           readOnly={readOnly}
-          // Explicitly forcing colors to avoid any black background issues
           className={`w-full min-w-0 text-right text-xs border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500' : 'bg-white text-gray-900'}`} 
           style={{ 
              backgroundColor: readOnly ? '#f3f4f6' : '#ffffff', 
              color: readOnly ? '#6b7280' : '#111827' 
           }}
         />
-        {hasCalculator && (
-          <div className="absolute right-0 top-0 bottom-0 flex items-center pr-1 pointer-events-none">
-             {/* Visual indicator placeholder if needed */}
-          </div>
-        )}
       </div>
       {hasCalculator && (
         <button 
