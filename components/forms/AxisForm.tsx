@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Gauge, Link as LinkIcon, Disc, Ruler } from 'lucide-react';
+import { Gauge, Link as LinkIcon, Disc, Ruler, Scale } from 'lucide-react';
 import { UnitInput, InputGroup, Select, SectionHeader } from '../Common';
 import { CamTable } from '../../types';
 
@@ -10,6 +10,7 @@ export const AxisForm = ({ params, onUpdate, availableMasters, camTables }: { pa
   };
 
   const isMasterFollower = params.profileType === 'Master/Follower' || params.profileType === 'Camming';
+  const isLinear = params.axisUsage === 'Linear';
 
   // Fallback if no masters
   const masterOptions = ['Virtual Master', ...availableMasters];
@@ -52,6 +53,27 @@ export const AxisForm = ({ params, onUpdate, availableMasters, camTables }: { pa
           <InputGroup label="Control Mode">
              <Select value={params.profileType} options={['Time Based', 'Master/Follower', 'Camming']} onChange={(e) => handleChange('profileType', e.target.value)} />
           </InputGroup>
+
+          <div className="pt-4">
+            <SectionHeader title="Scaling & Machine Cycle" />
+            <InputGroup label="Feed Constant">
+                <UnitInput 
+                    type={isLinear ? 'length' : 'angle'} 
+                    value={params.feedConstant || (isLinear ? 10 : 360)} 
+                    onChange={(val) => handleChange('feedConstant', val)}
+                />
+            </InputGroup>
+            {!isLinear && (
+                <>
+                    <InputGroup label="Cycle Min">
+                        <UnitInput type="angle" value={params.cycleMin || 0} onChange={(val) => handleChange('cycleMin', val)} />
+                    </InputGroup>
+                    <InputGroup label="Cycle Max">
+                        <UnitInput type="angle" value={params.cycleMax || 360} onChange={(val) => handleChange('cycleMax', val)} />
+                    </InputGroup>
+                </>
+            )}
+          </div>
         </div>
         
         <div className="space-y-1">
@@ -95,7 +117,7 @@ export const AxisForm = ({ params, onUpdate, availableMasters, camTables }: { pa
       </div>
       
       <div className="p-3 bg-gray-50 border border-gray-200 rounded-sm text-[11px] text-gray-600 italic">
-        <strong>Note:</strong> In "Master/Follower" or "Camming" modes, the motion profile is automatically calculated from the Master Axis trajectory and cannot be edited manually.
+        <strong>Note:</strong> The <strong>Feed Constant</strong> defines the distance traveled by the load per one revolution of the output shaft. In "Master/Follower" mode, the Gear Ratio here refers to the software synchronization ratio.
       </div>
     </div>
   );

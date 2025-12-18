@@ -162,17 +162,27 @@ export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p:
     }
   };
 
-  const renderField = (field: FieldConfig) => (
-    <InputGroup key={field.key} label={field.label}>
-      <UnitInput 
-        value={params[field.key]} 
-        onChange={(val) => handleChange(field.key, val)}
-        type={field.unitType}
-        hasCalculator={field.hasCalculator}
-        onCalculatorClick={() => handleOpenCalculator(field.key)}
-      />
-    </InputGroup>
-  );
+  const renderField = (field: FieldConfig) => {
+    // If it's the gear ratio, we want it to be read-only and linked to the gearbox ratio
+    const isLinkedRatio = field.key === 'transRatio';
+    const displayValue = isLinkedRatio ? (params.ratio || 1) : params[field.key];
+
+    return (
+      <InputGroup key={field.key} label={field.label}>
+        <UnitInput 
+          value={displayValue} 
+          onChange={(val) => !isLinkedRatio && handleChange(field.key, val)}
+          type={field.unitType}
+          readOnly={isLinkedRatio}
+          hasCalculator={field.hasCalculator}
+          onCalculatorClick={() => handleOpenCalculator(field.key)}
+        />
+        {isLinkedRatio && (
+          <div className="ml-1 text-[9px] text-blue-500 font-bold" title="Linked to Gearbox tab">LINKED</div>
+        )}
+      </InputGroup>
+    );
+  };
 
   const renderSection = (sectionData: MechanismSection) => (
     <div key={sectionData.section} className="mb-4 last:mb-0">

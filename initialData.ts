@@ -26,15 +26,18 @@ export const initialData: TreeNode[] = [
         expanded: true,
         parameters: {
           axisName: "Axis 1",
+          axisUsage: "Linear",
+          feedConstant: 10,
           profileType: "Master/Follower",
-          mechanismType: "Conveyor",
+          mechanismType: "Belt",
           massLoad: "50.0",
           frictionCoeff: "0.15",
           inclineAngle: "0",
-          pulleyRadius: "45.0",
           motorVendor: "Siemens",
           motorModel: "1FK7060-2AC71",
-          gearRatio: "10.0"
+          vendor: "Generic",
+          model: "G-10-1",
+          ratio: 10
         }
       },
       { 
@@ -45,12 +48,18 @@ export const initialData: TreeNode[] = [
         expanded: true,
         parameters: {
           axisName: "Axis 2",
+          axisUsage: "Rotary",
+          feedConstant: 360,
+          cycleMin: 0,
+          cycleMax: 360,
           profileType: "Time Based",
-          mechanismType: "Ball Screw",
-          massLoad: "120.0",
-          screwLead: "10",
+          mechanismType: "Rotation Table",
+          rotatingInertia: "120.0",
           motorVendor: "Siemens",
-          motorModel: "1FK7080-2AF71"
+          motorModel: "1FK7080-2AF71",
+          vendor: "Generic",
+          model: "G-10-1",
+          ratio: 10
         }
       }
     ]
