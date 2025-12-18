@@ -667,14 +667,6 @@ export const ProfileEditor = ({
                         <tr><th className="p-1 text-left pl-3 font-semibold">Trace</th><th className="p-1 font-semibold text-blue-600">Cursor</th><th className="p-1 font-semibold">Min</th><th className="p-1 font-semibold">Max</th><th className="p-1 font-semibold pr-3">RMS</th></tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                        {/* Time Row */}
-                        <tr className="bg-blue-50/20">
-                            <td className="p-1 text-left pl-3 border-l-4 border-l-gray-400 font-bold">Time (s)</td>
-                            <td className="p-1 font-bold text-blue-700 bg-blue-100/30">{formatEngValue(cursorTime)}</td>
-                            <td className="p-1">0.0000</td>
-                            <td className="p-1">{formatEngValue(totalTime)}</td>
-                            <td className="p-1 pr-3">-</td>
-                        </tr>
                         {traces.map(t => {
                             if (!t.active) return null;
                             const stat = analysis[t.key]; const curVal = cursorPoint ? cursorPoint[t.key] : null;
