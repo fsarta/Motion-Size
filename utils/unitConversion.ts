@@ -1,5 +1,5 @@
 
-export type UnitType = 'torque' | 'power' | 'inertia' | 'length' | 'mass' | 'force' | 'current' | 'voltage' | 'frequency' | 'speed' | 'ratio' | 'efficiency' | 'angle' | 'factor' | 'density' | 'temperature' | 'time' | 'volume';
+export type UnitType = 'torque' | 'power' | 'inertia' | 'length' | 'mass' | 'force' | 'current' | 'voltage' | 'frequency' | 'speed' | 'acceleration' | 'jerk' | 'ratio' | 'efficiency' | 'angle' | 'factor' | 'density' | 'temperature' | 'time' | 'volume';
 
 interface UnitDef {
   label: string;
@@ -14,11 +14,9 @@ interface UnitDef {
 // Torque: Nm
 // Power: kW
 // Inertia: kg·cm²
-// Speed: rpm
+// Speed: rpm (rotary) or mm/s (linear) - context dependent
 // Angle: deg
-// Temperature: C
 // Time: s
-// Volume: m³
 
 export const UNIT_DEFINITIONS: Record<UnitType, Record<string, UnitDef>> = {
   length: {
@@ -56,9 +54,20 @@ export const UNIT_DEFINITIONS: Record<UnitType, Record<string, UnitDef>> = {
     'HP': { label: 'HP', factor: 1.34102, precision: 2 },
   },
   speed: {
-    'rpm': { label: 'rpm', factor: 1, precision: 0 },
-    'rad/s': { label: 'rad/s', factor: 0.10472, precision: 2 },
-    'm/s': { label: 'm/s (lin)', factor: 0, precision: 2 }, // Context dependent, usually kept separate
+    'deg/s': { label: 'deg/s', factor: 1, precision: 1 },
+    'rpm': { label: 'rpm', factor: 1/6, precision: 0 },
+    'mm/s': { label: 'mm/s', factor: 1, precision: 1 },
+    'm/s': { label: 'm/s', factor: 0.001, precision: 3 },
+  },
+  acceleration: {
+    'deg/s²': { label: 'deg/s²', factor: 1, precision: 0 },
+    'mm/s²': { label: 'mm/s²', factor: 1, precision: 0 },
+    'm/s²': { label: 'm/s²', factor: 0.001, precision: 3 },
+    'G': { label: 'G', factor: 1 / 9806.65, precision: 3 },
+  },
+  jerk: {
+    'deg/s³': { label: 'deg/s³', factor: 1, precision: 0 },
+    'mm/s³': { label: 'mm/s³', factor: 1, precision: 0 },
   },
   density: {
     'kg/m³': { label: 'kg/m³', factor: 1, precision: 0 }, 
@@ -85,7 +94,6 @@ export const UNIT_DEFINITIONS: Record<UnitType, Record<string, UnitDef>> = {
     'ms': { label: 'ms', factor: 1000, precision: 0 },
     'min': { label: 'min', factor: 1 / 60, precision: 2 },
   },
-  // Pass-throughs / Singles
   current: { 'Arms': { label: 'Arms', factor: 1, precision: 2 } },
   voltage: { 'V': { label: 'V', factor: 1, precision: 0 }, 'kV': { label: 'kV', factor: 0.001, precision: 2 } },
   frequency: { 'Hz': { label: 'Hz', factor: 1000, precision: 0 }, 'kHz': { label: 'kHz', factor: 1, precision: 1 } },
@@ -94,50 +102,31 @@ export const UNIT_DEFINITIONS: Record<UnitType, Record<string, UnitDef>> = {
   factor: { 'µ': { label: '', factor: 1, precision: 2 } },
 };
 
-/**
- * Converts a stored base value to a display value in the target unit.
- */
 export const toDisplay = (baseValue: string | number | undefined, type: UnitType, unitKey: string): string => {
   if (baseValue === undefined || baseValue === '' || baseValue === null) return '';
   const numValue = typeof baseValue === 'string' ? parseFloat(baseValue) : baseValue;
   if (isNaN(numValue)) return String(baseValue);
-
   const defs = UNIT_DEFINITIONS[type];
   if (!defs || !defs[unitKey]) return String(numValue);
-
   const def = defs[unitKey];
-  
   return (numValue * def.factor).toFixed(def.precision);
 };
 
-/**
- * Converts a displayed value back to the base unit for storage.
- */
 export const toBase = (displayValue: string | number, type: UnitType, unitKey: string): string => {
   const numValue = typeof displayValue === 'string' ? parseFloat(displayValue) : displayValue;
   if (isNaN(numValue)) return String(displayValue);
-
   const defs = UNIT_DEFINITIONS[type];
   if (!defs || !defs[unitKey]) return String(numValue);
-
   const def = defs[unitKey];
-  
-  // Base = Display / Factor
   return (numValue / def.factor).toPrecision(10); 
 };
 
-/**
- * Gets the default unit key for a type (usually the first one defined or 'metric' equivalent)
- */
 export const getDefaultUnit = (type: UnitType): string => {
   const defs = UNIT_DEFINITIONS[type];
   if (!defs) return '';
   return Object.keys(defs)[0];
 };
 
-/**
- * Returns list of units for a type
- */
 export const getUnitsForType = (type: UnitType): string[] => {
   return UNIT_DEFINITIONS[type] ? Object.keys(UNIT_DEFINITIONS[type]) : [];
 };

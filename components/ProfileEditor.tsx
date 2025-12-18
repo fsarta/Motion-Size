@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Trash2, Lock, Unlock, CheckSquare, Square, Activity, AlertCircle, MousePointer2, Info } from 'lucide-react';
+import { Plus, Trash2, Lock, Unlock, CheckSquare, Square, Activity, AlertCircle, Timer, Gauge as GaugeIcon, Info } from 'lucide-react';
 import { UnitInput, InputGroup, Select, SectionHeader } from './Common';
 import { UnitType } from '../utils/unitConversion';
 
@@ -154,6 +154,16 @@ const LockButton = ({ locked, onClick, disabled }: { locked: boolean, onClick: (
   </button>
 );
 
+const ModeToggle = ({ mode, onToggle }: { mode: 'value' | 'time', onToggle: () => void }) => (
+  <button 
+    onClick={onToggle}
+    className="mr-2 p-1 bg-gray-50 border border-gray-200 rounded-sm hover:bg-win-hover text-win-blue transition-colors flex items-center justify-center shadow-sm"
+    title={mode === 'value' ? 'Switch to Time input' : 'Switch to Physical Value input'}
+  >
+    {mode === 'value' ? <GaugeIcon size={12} /> : <Timer size={12} />}
+  </button>
+);
+
 export const ProfileEditor = ({ 
   profileType = 'Time Based', 
   masterAxisName, 
@@ -168,6 +178,7 @@ export const ProfileEditor = ({
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_SEGMENTS[0].id);
   const [cursorTime, setCursorTime] = useState<number | null>(null);
   const [graphSize, setGraphSize] = useState({ width: 800, height: 400 });
+  const [accelModes, setAccelModes] = useState<Record<string, 'value' | 'time'>>({ acc: 'value', dec: 'value', jerk: 'value' });
   const graphRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -200,20 +211,37 @@ export const ProfileEditor = ({
   const [traces, setTraces] = useState<TraceConfig[]>([
     { key: 'pos', label: 'Position', color: '#10b981', unitType: posUnitType, active: true },
     { key: 'vel', label: 'Velocity', color: '#3b82f6', unitType: 'speed', active: true },
-    { key: 'acc', label: 'Accel', color: '#ef4444', unitType: 'factor', active: false },
-    { key: 'jerk', label: 'Jerk', color: '#f97316', unitType: 'factor', active: false },
+    { key: 'acc', label: 'Accel', color: '#ef4444', unitType: 'acceleration', active: false },
+    { key: 'jerk', label: 'Jerk', color: '#f97316', unitType: 'jerk', active: false },
     { key: 'torque', label: 'Torque', color: '#8b5cf6', unitType: 'torque', active: false },
     { key: 'masterPos', label: 'Master Pos', color: '#6366f1', unitType: 'angle', active: false },
   ]);
 
-  const updateSegment = (id: string, field: keyof MotionSegment, value: any) => {
+  const updateSegment = (id: string, field: keyof MotionSegment, value: any, entryMode: 'value' | 'time' = 'value') => {
     if (isReadOnly) return;
     const newSegments = segments.map(s => {
       if (s.id !== id) return s;
-      const updated = { ...s, [field]: value };
+      
+      let updated = { ...s, [field]: value };
+      const idx = segments.findIndex(seg => seg.id === id);
+      const v0 = idx > 0 ? (segments[idx-1].type === 'Accel/Decel' ? segments[idx-1].velocity : 0) : 0;
+      const dv = Math.abs(updated.velocity - v0);
+
+      // Special handling for Time-based Accel/Decel/Jerk inputs
+      if (entryMode === 'time') {
+          if (field === 'accel' || field === 'decel') {
+              const timeVal = parseFloat(value);
+              updated[field] = timeVal > 0 ? dv / timeVal : updated[field];
+          } else if (field === 'jerk') {
+              const timeVal = parseFloat(value);
+              // Simple jerk calculation: dv / T_acc^2 * factor? 
+              // Usually jerk is dv / (Ta * Tj) where Tj is time to reach peak acc.
+              // To satisfy user simplicity: physical jerk = Accel / JerkTime
+              updated.jerk = timeVal > 0 ? updated.accel / timeVal : updated.jerk;
+          }
+      }
+
       if (updated.type === 'Accel/Decel') {
-          const idx = segments.findIndex(seg => seg.id === id);
-          const v0 = idx > 0 ? (segments[idx-1].type === 'Accel/Decel' ? segments[idx-1].velocity : 0) : 0;
           if (updated.calcTarget === 'velocity') updated.velocity = (2 * updated.distance) / (updated.duration || 1) - v0;
           else if (updated.calcTarget === 'duration') updated.duration = (2 * updated.distance) / (Math.abs(updated.velocity + v0) || 1);
           else if (updated.calcTarget === 'distance') updated.distance = 0.5 * (updated.velocity + v0) * updated.duration;
@@ -244,6 +272,17 @@ export const ProfileEditor = ({
     const max = Math.max(...vals, 1);
     const range = max - min;
     return (v: number) => (graphSize.height - paddingBottom) - ((v - min) / (range || 1)) * (graphSize.height - paddingTop - paddingBottom);
+  };
+
+  // Helper to get time value from physical value for display in Time-Mode
+  const getTimeValue = (val: number, field: 'accel' | 'decel' | 'jerk') => {
+    if (val === 0) return 0;
+    const idx = segments.findIndex(s => s.id === selectedId);
+    const v0 = idx > 0 ? (segments[idx-1].type === 'Accel/Decel' ? segments[idx-1].velocity : 0) : 0;
+    const dv = Math.abs((selectedSeg?.velocity || 0) - v0);
+    
+    if (field === 'jerk') return (selectedSeg?.accel || 0) / val;
+    return dv / val;
   };
 
   return (
@@ -334,16 +373,36 @@ export const ProfileEditor = ({
                             <LockButton disabled={isReadOnly} locked={selectedSeg.calcTarget === 'velocity'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'velocity')} />
                             <UnitInput type="speed" value={selectedSeg.velocity} onChange={(val) => updateSegment(selectedSeg.id, 'velocity', parseFloat(val))} readOnly={isReadOnly} />
                         </InputGroup>
+                        
                         <SectionHeader title="Dynamic Limits" />
+                        
                         <InputGroup label="Acceleration">
-                            <UnitInput type="factor" value={selectedSeg.accel} onChange={(val) => updateSegment(selectedSeg.id, 'accel', parseFloat(val))} readOnly={isReadOnly} />
+                            <ModeToggle mode={accelModes.acc} onToggle={() => setAccelModes({...accelModes, acc: accelModes.acc === 'value' ? 'time' : 'value'})} />
+                            {accelModes.acc === 'value' ? (
+                                <UnitInput type="acceleration" value={selectedSeg.accel} onChange={(val) => updateSegment(selectedSeg.id, 'accel', parseFloat(val))} readOnly={isReadOnly} />
+                            ) : (
+                                <UnitInput type="time" value={getTimeValue(selectedSeg.accel, 'accel')} onChange={(val) => updateSegment(selectedSeg.id, 'accel', parseFloat(val), 'time')} readOnly={isReadOnly} />
+                            )}
                         </InputGroup>
+                        
                         <InputGroup label="Deceleration">
-                            <UnitInput type="factor" value={selectedSeg.decel} onChange={(val) => updateSegment(selectedSeg.id, 'decel', parseFloat(val))} readOnly={isReadOnly} />
+                            <ModeToggle mode={accelModes.dec} onToggle={() => setAccelModes({...accelModes, dec: accelModes.dec === 'value' ? 'time' : 'value'})} />
+                            {accelModes.dec === 'value' ? (
+                                <UnitInput type="acceleration" value={selectedSeg.decel} onChange={(val) => updateSegment(selectedSeg.id, 'decel', parseFloat(val))} readOnly={isReadOnly} />
+                            ) : (
+                                <UnitInput type="time" value={getTimeValue(selectedSeg.decel, 'decel')} onChange={(val) => updateSegment(selectedSeg.id, 'decel', parseFloat(val), 'time')} readOnly={isReadOnly} />
+                            )}
                         </InputGroup>
+                        
                         <InputGroup label="Jerk">
-                            <UnitInput type="factor" value={selectedSeg.jerk} onChange={(val) => updateSegment(selectedSeg.id, 'jerk', parseFloat(val))} readOnly={isReadOnly} />
+                            <ModeToggle mode={accelModes.jerk} onToggle={() => setAccelModes({...accelModes, jerk: accelModes.jerk === 'value' ? 'time' : 'value'})} />
+                            {accelModes.jerk === 'value' ? (
+                                <UnitInput type="jerk" value={selectedSeg.jerk} onChange={(val) => updateSegment(selectedSeg.id, 'jerk', parseFloat(val))} readOnly={isReadOnly} />
+                            ) : (
+                                <UnitInput type="time" value={getTimeValue(selectedSeg.jerk, 'jerk')} onChange={(val) => updateSegment(selectedSeg.id, 'jerk', parseFloat(val), 'time')} readOnly={isReadOnly} />
+                            )}
                         </InputGroup>
+                        
                         <InputGroup label="Additional Torque">
                             <UnitInput type="torque" value={selectedSeg.payload} onChange={(val) => updateSegment(selectedSeg.id, 'payload', parseFloat(val))} readOnly={isReadOnly} />
                         </InputGroup>
@@ -424,7 +483,7 @@ export const ProfileEditor = ({
                     const currentVal = timeSeries.find(p => p.t >= (cursorTime || 0))?.[t.key] || 0;
                     const vals = timeSeries.map(p => p[t.key] as number);
                     const rms = Math.sqrt(vals.reduce((acc, v) => acc + v*v, 0) / vals.length);
-                    const unitLabel = t.key === 'pos' ? (posUnitType === 'angle' ? 'deg' : 'mm') : t.key === 'vel' ? (posUnitType === 'angle' ? 'deg/s' : 'mm/s') : '';
+                    const unitLabel = t.key === 'pos' ? (posUnitType === 'angle' ? 'deg' : 'mm') : t.key === 'vel' ? (posUnitType === 'angle' ? 'deg/s' : 'mm/s') : t.key === 'acc' ? (posUnitType === 'angle' ? 'deg/s²' : 'mm/s²') : t.key === 'jerk' ? (posUnitType === 'angle' ? 'deg/s³' : 'mm/s³') : '';
                     return (
                     <tr key={t.key} className="border-b border-gray-100 hover:bg-win-hover transition-colors font-mono">
                         <td className="p-2 border-r border-win-border font-sans font-bold flex items-center">
