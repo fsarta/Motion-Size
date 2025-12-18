@@ -17,6 +17,15 @@ type MechanismSection = {
   fields: FieldConfig[];
 };
 
+const COMMON_TRANSMISSION: MechanismSection = {
+  section: 'Regarding Transmission',
+  fields: [
+    { key: 'transEfficiency', label: 'Trans. Efficiency', unitType: 'efficiency' },
+    { key: 'transInertia', label: 'Trans. Inertia', unitType: 'inertia', hasCalculator: true },
+    { key: 'transRatio', label: 'Trans. Ratio', unitType: 'ratio' },
+  ]
+};
+
 const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
   'Ball Screw': [
     {
@@ -25,37 +34,56 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
         { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
         { key: 'externalForce', label: 'External Force', unitType: 'force' },
         { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
-        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
         { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
       ]
     },
+    COMMON_TRANSMISSION,
     {
       section: 'Regarding Mechanism',
       fields: [
-        { key: 'screwLead', label: 'Lead', unitType: 'length' },
+        { key: 'screwLead', label: 'Screw Lead', unitType: 'length' },
         { key: 'slideMass', label: 'Slide Mass', unitType: 'mass' },
-        { key: 'screwInertia', label: 'Ball Screw Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'screwInertia', label: 'Screw Inertia', unitType: 'inertia', hasCalculator: true },
         { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
       ]
     }
   ],
-  'Belt': [
+  'Conveyor': [
     {
       section: 'Regarding Load',
       fields: [
         { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
-        { key: 'externalForce', label: 'External Force', unitType: 'force' },
         { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
-        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+        { key: 'additionalForce', label: 'Add. Force', unitType: 'force' },
+      ]
+    },
+    COMMON_TRANSMISSION,
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'pulleyRadius', label: 'Drive Pulley Rad.', unitType: 'length' },
+        { key: 'massBelt', label: 'Belt/Chain Mass', unitType: 'mass' },
+        { key: 'pulleyInertia', label: 'Pulley Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    }
+  ],
+  'Belt and Pulley': [
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
         { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
       ]
     },
+    COMMON_TRANSMISSION,
     {
       section: 'Regarding Mechanism',
       fields: [
         { key: 'driverDiameter', label: 'Driver Pitch Dia.', unitType: 'length' },
         { key: 'beltMass', label: 'Belt Mass', unitType: 'mass' },
-        { key: 'driverInertia', label: 'Driver/Idler Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'driverInertia', label: 'Driver Inertia', unitType: 'inertia', hasCalculator: true },
         { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
       ]
     }
@@ -67,16 +95,53 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
         { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
         { key: 'externalForce', label: 'External Force', unitType: 'force' },
         { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
-        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
-        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
       ]
     },
+    COMMON_TRANSMISSION,
     {
       section: 'Regarding Mechanism',
       fields: [
         { key: 'pinionPCD', label: 'Pinion PCD', unitType: 'length' },
         { key: 'rackMass', label: 'Rack Mass', unitType: 'mass' },
         { key: 'pinionInertia', label: 'Pinion Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    }
+  ],
+  'NIP Roll / Feed Roll': [
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'webTension', label: 'Web Tension', unitType: 'force' },
+        { key: 'nipForce', label: 'NIP Force', unitType: 'force' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
+      ]
+    },
+    COMMON_TRANSMISSION,
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'rollDiameter', label: 'Roll Diameter', unitType: 'length' },
+        { key: 'rollInertia', label: 'Roll Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
+      ]
+    }
+  ],
+  'Chain and Sprocket': [
+    {
+      section: 'Regarding Load',
+      fields: [
+        { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
+        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
+      ]
+    },
+    COMMON_TRANSMISSION,
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'sprocketPCD', label: 'Sprocket PCD', unitType: 'length' },
+        { key: 'chainMass', label: 'Chain Mass', unitType: 'mass' },
+        { key: 'sprocketInertia', label: 'Sprocket Inertia', unitType: 'inertia', hasCalculator: true },
         { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
       ]
     }
@@ -88,8 +153,6 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
         { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
         { key: 'externalForce', label: 'External Force', unitType: 'force' },
         { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
-        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
-        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
       ]
     },
     {
@@ -107,7 +170,14 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
         { key: 'rotatingInertia', label: 'Rotating Inertia', unitType: 'inertia', hasCalculator: true },
         { key: 'externalTorque', label: 'External Torque', unitType: 'torque' },
         { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
-        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
+      ]
+    },
+    COMMON_TRANSMISSION,
+    {
+      section: 'Regarding Mechanism',
+      fields: [
+        { key: 'tableInertia', label: 'Table Inertia', unitType: 'inertia', hasCalculator: true },
+        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
       ]
     }
   ]

@@ -148,7 +148,7 @@ export const WorkArea = ({
 
   // RENDER LOGIC
   
-  // 1. AXIS PAGE: Only Data (No Visualizer)
+  // 1. AXIS PAGE: Only Data (No Visualizer, No Tabs)
   if (selectedNode.type === 'axis') {
     return (
       <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
