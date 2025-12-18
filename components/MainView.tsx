@@ -5,6 +5,7 @@ import { TreeNode, CamTable } from '../types';
 import { ProfileEditor } from './ProfileEditor';
 import { FormTabs } from './Common';
 import { Visualizer } from './Visualizer';
+import { UnitType } from '../utils/unitConversion';
 
 // Forms
 import { PowerGroupForm } from './forms/PowerGroupForm';
@@ -52,11 +53,9 @@ export const WorkArea = ({
 
   if (!selectedNode) return <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Select a project node.</div>;
 
-  const rootNode = data.find(n => n.id === 'root');
   const params = selectedNode.parameters || {};
   const handleUpdate = (newParams: any) => onUpdateNode(selectedNode.id, newParams);
 
-  // Robust Available Masters calculation
   const availableMasters = useMemo(() => {
      const masters: string[] = [];
      const traverse = (nodes: TreeNode[], groupName: string) => {
@@ -74,7 +73,6 @@ export const WorkArea = ({
      return masters;
   }, [data, selectedNode.id]);
 
-  // Master profile data retrieval logic
   const masterProfileData = useMemo(() => {
     if (!params.masterAxis || params.masterAxis === 'Virtual Master') return null;
     const axisLabel = String(params.masterAxis).includes('>') ? String(params.masterAxis).split('>')[1].trim() : String(params.masterAxis);
@@ -100,22 +98,25 @@ export const WorkArea = ({
   const gearRatioNum = parseFloat(String(params.gearRatioNum)) || 1;
   const gearRatioDen = parseFloat(String(params.gearRatioDen)) || 1;
   const gearRatio = gearRatioDen !== 0 ? gearRatioNum / gearRatioDen : 1;
-  const cycleTime = parseFloat(String(rootNode?.parameters?.cycleTime)) || 10;
+  
+  // Logic to determine if we use degrees or millimeters based on AxisForm selection
+  const posUnitType: UnitType = params.axisUsage === 'Linear' ? 'length' : 'angle';
+  const isReadOnly = profileType !== 'Time Based';
 
   if (selectedNode.type === 'axis') {
     const tabs = ['System Data', 'Mechanism', 'Motion Profile', 'Motor', 'Drive', 'Gearbox', 'BOM'];
     
     return (
-      <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
-        <div className="h-10 bg-white border-b border-gray-300 flex items-center px-4 shrink-0 shadow-sm z-10">
-           <Activity size={16} className="text-blue-600 mr-2"/>
+      <div className="flex-1 flex flex-col h-full bg-win-bg overflow-hidden">
+        <div className="h-10 bg-white border-b border-win-border flex items-center px-4 shrink-0 shadow-sm z-10">
+           <Activity size={16} className="text-win-blue mr-2"/>
            <span className="text-sm font-bold text-gray-700">{selectedNode.label} Configuration</span>
         </div>
 
         <div className="flex-1 flex flex-col min-h-0">
           <FormTabs tabs={tabs} activeTab={activeTab} onTabClick={setActiveTab} />
           <div className="flex-1 overflow-hidden">
-             <div className="h-full bg-white p-4 border border-gray-200 m-2 rounded shadow-sm overflow-y-auto">
+             <div className="h-full bg-win-panel p-4 border border-win-border m-2 rounded shadow-sm overflow-hidden">
                 {activeTab === 'System Data' && <AxisForm params={params} onUpdate={handleUpdate} availableMasters={availableMasters} camTables={camTables} />}
                 {activeTab === 'Mechanism' && <MechanismForm params={params} onUpdate={handleUpdate} />}
                 {activeTab === 'Motion Profile' && (
@@ -124,7 +125,8 @@ export const WorkArea = ({
                        profileType={profileType as any} 
                        masterAxisName={masterAxisName}
                        gearRatio={gearRatio}
-                       cycleTime={cycleTime}
+                       posUnitType={posUnitType}
+                       isReadOnly={isReadOnly}
                        savedProfileData={params.motionProfileData ? String(params.motionProfileData) : null}
                        masterProfileData={masterProfileData}
                        onProfileChange={(json) => handleUpdate({ motionProfileData: json })}
@@ -143,18 +145,11 @@ export const WorkArea = ({
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-win-bg overflow-hidden">
       <Visualizer axes={selectedNode.children || []} />
       <div className="flex-1 p-4 overflow-y-auto">
-        <SectionHeader title="Power Group Data" />
         <PowerGroupForm params={params} onUpdate={handleUpdate} />
       </div>
     </div>
   );
 };
-
-const SectionHeader = ({ title }: { title: string }) => (
-  <div className="text-xs font-bold text-gray-700 mb-2 border-b border-gray-300 pb-1 uppercase tracking-wide">
-    {title}
-  </div>
-);

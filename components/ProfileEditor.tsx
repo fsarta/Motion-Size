@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Trash2, Lock, Unlock, CheckSquare, Square, Link as LinkIcon, Activity, ChevronDown, AlertCircle } from 'lucide-react';
-import { UnitInput, InputGroup, Select } from './Common';
+import { Plus, Trash2, Lock, Unlock, CheckSquare, Square, Activity, AlertCircle, MousePointer2, Info } from 'lucide-react';
+import { UnitInput, InputGroup, Select, SectionHeader } from './Common';
+import { UnitType } from '../utils/unitConversion';
 
 type SegmentType = 'Accel/Decel' | 'Trapezoid' | 'Triangle' | 'S-Curve' | 'Dwell/Traverse' | 'Sine';
 type CalcTarget = 'duration' | 'distance' | 'velocity';
@@ -13,8 +14,6 @@ export interface MotionSegment {
   duration: number; 
   distance: number; 
   velocity: number; 
-  startVelocity: number; 
-  endVelocity: number;   
   accel: number; 
   decel: number;
   jerk: number;
@@ -30,16 +29,15 @@ interface TimePoint {
   acc: number;
   jerk: number;
   torque: number;
-  motorVel: number;
 }
 
-type TraceType = 'pos' | 'vel' | 'acc' | 'jerk' | 'torque' | 'motorVel' | 'masterPos';
+type TraceType = 'pos' | 'vel' | 'acc' | 'jerk' | 'torque' | 'masterPos';
 
 interface TraceConfig {
   key: TraceType;
   label: string;
   color: string;
-  unit: string;
+  unitType: UnitType;
   active: boolean;
 }
 
@@ -47,16 +45,13 @@ const DEFAULT_SEGMENTS: MotionSegment[] = [
   { 
     id: '1', type: 'Trapezoid', 
     duration: 1.0, distance: 360, velocity: 480, 
-    startVelocity: 0, endVelocity: 0,
     accel: 1920, decel: 1920, jerk: 0, payload: 0,
     calcTarget: 'velocity'
   }
 ];
 
-// Physics Engine with Chaining and High-Fidelity Curves
 const simulateMotion = (
     segments: MotionSegment[], 
-    motorRatio: number, 
     totalInertia: number, 
     profileType: ProfileType, 
     gearRatio: number,
@@ -68,7 +63,7 @@ const simulateMotion = (
   if ((profileType === 'Master/Follower' || profileType === 'Camming') && masterProfileData) {
     try {
       const masterSegments = JSON.parse(masterProfileData) as MotionSegment[];
-      const masterPoints = simulateMotion(masterSegments, 1, 0, 'Time Based', 1, null);
+      const masterPoints = simulateMotion(masterSegments, 0, 'Time Based', 1, null);
       return masterPoints.map(mp => ({
         t: mp.t,
         masterPos: mp.pos,
@@ -77,7 +72,6 @@ const simulateMotion = (
         acc: mp.acc * gearRatio,
         jerk: mp.jerk * gearRatio,
         torque: (totalInertia * mp.acc * gearRatio),
-        motorVel: mp.vel * gearRatio * motorRatio
       }));
     } catch (e) { console.error("Master simulation failed", e); }
   }
@@ -110,7 +104,7 @@ const simulateMotion = (
         v = v_avg * (1 - Math.cos((Math.PI * t) / T));
         s = v_avg * (t - (T / Math.PI) * Math.sin((Math.PI * t) / T));
         a = v_avg * (Math.PI / T) * Math.sin((Math.PI * t) / T);
-        v1 = 0;
+        v1 = v_avg * 2; 
       } else if (seg.type === 'Trapezoid') {
         const ta = T * 0.25; const td = T * 0.25; const tc = T - ta - td;
         const vp = S / (T - ta);
@@ -139,7 +133,6 @@ const simulateMotion = (
           acc: a,
           jerk: j,
           torque: (totalInertia * a) + seg.payload,
-          motorVel: v * motorRatio
         });
       }
     }
@@ -151,9 +144,13 @@ const simulateMotion = (
   return points;
 };
 
-const LockButton = ({ locked, onClick }: { locked: boolean, onClick: () => void }) => (
-  <button onClick={onClick} className={`mr-2 p-1 rounded hover:bg-gray-200 transition-colors ${locked ? 'text-blue-600' : 'text-gray-400'}`}>
-    {locked ? <Lock size={14} /> : <Unlock size={14} />}
+const LockButton = ({ locked, onClick, disabled }: { locked: boolean, onClick: () => void, disabled?: boolean }) => (
+  <button 
+    disabled={disabled}
+    onClick={onClick} 
+    className={`mr-2 p-1 rounded-sm border transition-colors ${disabled ? 'opacity-30 cursor-not-allowed' : ''} ${locked ? 'bg-blue-50 border-blue-300 text-blue-600 shadow-inner' : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100'}`}
+  >
+    {locked ? <Lock size={12} /> : <Unlock size={12} />}
   </button>
 );
 
@@ -163,6 +160,8 @@ export const ProfileEditor = ({
   gearRatio = 1, 
   savedProfileData, 
   masterProfileData,
+  posUnitType = 'angle',
+  isReadOnly = false,
   onProfileChange 
 }: any) => {
   const [segments, setSegments] = useState<MotionSegment[]>(DEFAULT_SEGMENTS);
@@ -195,26 +194,30 @@ export const ProfileEditor = ({
   }, [savedProfileData]);
 
   const timeSeries = useMemo(() => 
-    simulateMotion(segments, 1, 0.015, profileType, gearRatio, masterProfileData),
+    simulateMotion(segments, 0.015, profileType, gearRatio, masterProfileData),
   [segments, profileType, gearRatio, masterProfileData]);
 
   const [traces, setTraces] = useState<TraceConfig[]>([
-    { key: 'pos', label: 'Position', color: '#10b981', unit: 'deg', active: true },
-    { key: 'vel', label: 'Velocity', color: '#3b82f6', unit: 'deg/s', active: true },
-    { key: 'acc', label: 'Accel', color: '#ef4444', unit: 'deg/s²', active: false },
-    { key: 'jerk', label: 'Jerk', color: '#f97316', unit: 'deg/s³', active: false },
-    { key: 'torque', label: 'Torque', color: '#8b5cf6', unit: 'Nm', active: false },
-    { key: 'masterPos', label: 'Master Pos', color: '#6366f1', unit: 'deg', active: false },
+    { key: 'pos', label: 'Position', color: '#10b981', unitType: posUnitType, active: true },
+    { key: 'vel', label: 'Velocity', color: '#3b82f6', unitType: 'speed', active: true },
+    { key: 'acc', label: 'Accel', color: '#ef4444', unitType: 'factor', active: false },
+    { key: 'jerk', label: 'Jerk', color: '#f97316', unitType: 'factor', active: false },
+    { key: 'torque', label: 'Torque', color: '#8b5cf6', unitType: 'torque', active: false },
+    { key: 'masterPos', label: 'Master Pos', color: '#6366f1', unitType: 'angle', active: false },
   ]);
 
   const updateSegment = (id: string, field: keyof MotionSegment, value: any) => {
+    if (isReadOnly) return;
     const newSegments = segments.map(s => {
       if (s.id !== id) return s;
       const updated = { ...s, [field]: value };
       if (updated.type === 'Accel/Decel') {
-          if (updated.calcTarget === 'velocity') updated.velocity = (2 * updated.distance) / (updated.duration || 1);
-          else if (updated.calcTarget === 'duration') updated.duration = (2 * updated.distance) / (Math.abs(updated.velocity) || 1);
-          else if (updated.calcTarget === 'distance') updated.distance = 0.5 * updated.velocity * updated.duration;
+          const idx = segments.findIndex(seg => seg.id === id);
+          const v0 = idx > 0 ? (segments[idx-1].type === 'Accel/Decel' ? segments[idx-1].velocity : 0) : 0;
+          if (updated.calcTarget === 'velocity') updated.velocity = (2 * updated.distance) / (updated.duration || 1) - v0;
+          else if (updated.calcTarget === 'duration') updated.duration = (2 * updated.distance) / (Math.abs(updated.velocity + v0) || 1);
+          else if (updated.calcTarget === 'distance') updated.distance = 0.5 * (updated.velocity + v0) * updated.duration;
+          updated.accel = Math.abs((updated.velocity - v0) / (updated.duration || 1));
       } else {
           if (updated.calcTarget === 'velocity') updated.velocity = updated.distance / (updated.duration || 1);
           else if (updated.calcTarget === 'duration') updated.duration = Math.abs(updated.distance / (Math.abs(updated.velocity) || 1));
@@ -231,10 +234,10 @@ export const ProfileEditor = ({
 
   const paddingLeft = 60;
   const paddingRight = 40;
-  const paddingTop = 40;
-  const paddingBottom = 40;
+  const paddingTop = 30;
+  const paddingBottom = 30;
 
-  const scaleX = (t: number) => paddingLeft + (t / maxT) * (graphSize.width - paddingLeft - paddingRight);
+  const scaleX = (t: number) => paddingLeft + (t / (maxT || 1)) * (graphSize.width - paddingLeft - paddingRight);
   const getScaleY = (key: TraceType) => {
     const vals = timeSeries.map(p => p[key] as number);
     const min = Math.min(...vals, 0);
@@ -244,11 +247,11 @@ export const ProfileEditor = ({
   };
 
   return (
-    <div className="flex h-full border border-gray-300 bg-white font-sans text-xs select-none">
-      <div className="w-[450px] border-r border-gray-300 flex flex-col bg-gray-100 overflow-hidden shrink-0">
-        <div className="p-2 bg-gray-200 font-bold border-b border-gray-300 flex justify-between items-center shrink-0">
-          <span className="text-gray-700 uppercase tracking-tight">Sequence Editor</span>
-          {profileType === 'Time Based' && (
+    <div className="flex h-full border border-win-border bg-win-panel font-sans text-xs select-none">
+      <div className="w-[420px] border-r border-win-border flex flex-col bg-win-bg overflow-hidden shrink-0">
+        <div className="p-2 bg-gray-600 text-white font-bold flex justify-between items-center shrink-0 z-10">
+          <span className="uppercase text-[10px] tracking-widest pl-1">Sequence Editor</span>
+          {!isReadOnly && (
             <button onClick={() => {
                 const newId = Date.now().toString();
                 const newSeg = { ...DEFAULT_SEGMENTS[0], id: newId };
@@ -256,22 +259,29 @@ export const ProfileEditor = ({
                 setSegments(newS);
                 setSelectedId(newId);
                 onProfileChange(JSON.stringify(newS));
-            }} className="flex items-center space-x-1 px-2 py-0.5 bg-green-600 text-white rounded hover:bg-green-700 text-[10px]">
-              <Plus size={12} /> <span>Add Segment</span>
+            }} className="flex items-center space-x-1 px-2 py-0.5 bg-green-600 text-white rounded-sm hover:bg-green-700 text-[10px]">
+              <Plus size={12} /> <span>New Step</span>
             </button>
           )}
         </div>
 
         <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="h-1/2 overflow-y-auto border-b border-gray-300 bg-white">
+            <div className="h-1/3 overflow-y-auto border-b border-win-border bg-white shadow-inner relative">
+                {isReadOnly && (
+                    <div className="absolute inset-0 bg-gray-50/50 backdrop-blur-[1px] z-20 flex items-center justify-center p-4 text-center">
+                        <div className="bg-white border border-blue-300 p-2 shadow-sm rounded-sm text-blue-800 flex items-center space-x-2">
+                            <Info size={14}/> <span>Follower profile (Locked)</span>
+                        </div>
+                    </div>
+                )}
                 <table className="w-full text-left border-collapse">
-                    <thead className="bg-gray-50 sticky top-0 border-b border-gray-200 z-10">
-                        <tr className="text-[10px] text-gray-500 uppercase">
+                    <thead className="bg-gray-100 sticky top-0 border-b border-win-border z-10">
+                        <tr className="text-[9px] text-gray-500 uppercase font-bold">
                             <th className="p-2 w-8">#</th>
-                            <th className="p-2">Type</th>
+                            <th className="p-2">Law</th>
                             <th className="p-2">Abs Time (s)</th>
-                            <th className="p-2">Abs Dist (deg)</th>
-                            <th className="p-2 w-8"></th>
+                            <th className="p-2">Abs Dist ({posUnitType === 'angle' ? 'deg' : 'mm'})</th>
+                            {!isReadOnly && <th className="p-2 w-8"></th>}
                         </tr>
                     </thead>
                     <tbody>
@@ -281,81 +291,93 @@ export const ProfileEditor = ({
                             return acc;
                         }, [] as any[]).map((s, i) => (
                             <tr key={s.id} onClick={() => setSelectedId(s.id)}
-                                className={`cursor-pointer border-b border-gray-100 hover:bg-blue-50 transition-colors ${selectedId === s.id ? 'bg-win-select font-bold' : ''}`}>
+                                className={`cursor-pointer border-b border-gray-100 transition-colors ${selectedId === s.id ? 'bg-win-select font-bold' : 'hover:bg-win-hover'}`}>
                                 <td className="p-2 text-gray-400">{i+1}</td>
-                                <td className="p-2 text-blue-600">{s.type}</td>
+                                <td className="p-2 text-win-blue">{s.type}</td>
                                 <td className="p-2 font-mono">{s.absT.toFixed(3)}</td>
                                 <td className="p-2 font-mono">{s.absD.toFixed(1)}</td>
-                                <td className="p-2 text-center">
-                                    <button onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        const filtered = segments.filter(seg => seg.id !== s.id);
-                                        setSegments(filtered);
-                                        if (filtered.length > 0) setSelectedId(filtered[0].id);
-                                        onProfileChange(JSON.stringify(filtered));
-                                    }} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={12}/></button>
-                                </td>
+                                {!isReadOnly && (
+                                    <td className="p-2">
+                                        <button onClick={(e) => { 
+                                            e.stopPropagation(); 
+                                            const filtered = segments.filter(seg => seg.id !== s.id);
+                                            setSegments(filtered);
+                                            if (filtered.length > 0) setSelectedId(filtered[0].id);
+                                            onProfileChange(JSON.stringify(filtered));
+                                        }} className="text-gray-300 hover:text-red-600"><Trash2 size={12}/></button>
+                                    </td>
+                                )}
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
 
-            <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+            <div className="flex-1 p-4 overflow-y-auto bg-win-panel">
                 {selectedSeg ? (
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-between border-b border-gray-300 pb-1">
-                            <span className="font-bold text-gray-700 uppercase text-[10px]">Segment Details (Relative)</span>
-                            <span className="text-[10px] text-gray-400 font-mono">#{segments.findIndex(s=>s.id===selectedSeg.id)+1}</span>
-                        </div>
+                    <div className={`space-y-1 ${isReadOnly ? 'pointer-events-none opacity-60' : ''}`}>
+                        <SectionHeader title="Segment Detail (Relative Values)" />
                         <InputGroup label="Motion Law">
-                            <Select value={selectedSeg.type} options={['Accel/Decel', 'Trapezoid', 'S-Curve', 'Sine', 'Dwell/Traverse']} 
+                            <Select value={selectedSeg.type} options={['Accel/Decel', 'Trapezoid', 'Triangle', 'S-Curve', 'Sine', 'Dwell/Traverse']} 
                                 onChange={e => updateSegment(selectedSeg.id, 'type', e.target.value as SegmentType)} />
                         </InputGroup>
-                        <div className="space-y-1">
-                            <InputGroup label="Rel. Duration (s)">
-                                <LockButton locked={selectedSeg.calcTarget === 'duration'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'duration')} />
-                                <input className="w-full border border-gray-300 px-2 h-6 text-xs bg-white" type="number" step="0.1" value={selectedSeg.duration} onChange={e => updateSegment(selectedSeg.id, 'duration', parseFloat(e.target.value))} />
-                            </InputGroup>
-                            <InputGroup label="Rel. Distance (deg)">
-                                <LockButton locked={selectedSeg.calcTarget === 'distance'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'distance')} />
-                                <input className="w-full border border-gray-300 px-2 h-6 text-xs bg-white" type="number" step="1" value={selectedSeg.distance} onChange={e => updateSegment(selectedSeg.id, 'distance', parseFloat(e.target.value))} />
-                            </InputGroup>
-                            <InputGroup label="End Velocity (deg/s)">
-                                <LockButton locked={selectedSeg.calcTarget === 'velocity'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'velocity')} />
-                                <input className="w-full border border-gray-300 px-2 h-6 text-xs bg-white" type="number" step="10" value={selectedSeg.velocity} onChange={e => updateSegment(selectedSeg.id, 'velocity', parseFloat(e.target.value))} />
-                            </InputGroup>
-                        </div>
+                        <div className="h-2"></div>
+                        <InputGroup label="Rel. Duration (s)">
+                            <LockButton disabled={isReadOnly} locked={selectedSeg.calcTarget === 'duration'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'duration')} />
+                            <UnitInput type="time" value={selectedSeg.duration} onChange={(val) => updateSegment(selectedSeg.id, 'duration', parseFloat(val))} readOnly={isReadOnly} />
+                        </InputGroup>
+                        <InputGroup label={`Rel. Distance (${posUnitType === 'angle' ? 'deg' : 'mm'})`}>
+                            <LockButton disabled={isReadOnly} locked={selectedSeg.calcTarget === 'distance'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'distance')} />
+                            <UnitInput type={posUnitType} value={selectedSeg.distance} onChange={(val) => updateSegment(selectedSeg.id, 'distance', parseFloat(val))} readOnly={isReadOnly} />
+                        </InputGroup>
+                        <InputGroup label="End Velocity">
+                            <LockButton disabled={isReadOnly} locked={selectedSeg.calcTarget === 'velocity'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'velocity')} />
+                            <UnitInput type="speed" value={selectedSeg.velocity} onChange={(val) => updateSegment(selectedSeg.id, 'velocity', parseFloat(val))} readOnly={isReadOnly} />
+                        </InputGroup>
+                        <SectionHeader title="Dynamic Limits" />
+                        <InputGroup label="Acceleration">
+                            <UnitInput type="factor" value={selectedSeg.accel} onChange={(val) => updateSegment(selectedSeg.id, 'accel', parseFloat(val))} readOnly={isReadOnly} />
+                        </InputGroup>
+                        <InputGroup label="Deceleration">
+                            <UnitInput type="factor" value={selectedSeg.decel} onChange={(val) => updateSegment(selectedSeg.id, 'decel', parseFloat(val))} readOnly={isReadOnly} />
+                        </InputGroup>
+                        <InputGroup label="Jerk">
+                            <UnitInput type="factor" value={selectedSeg.jerk} onChange={(val) => updateSegment(selectedSeg.id, 'jerk', parseFloat(val))} readOnly={isReadOnly} />
+                        </InputGroup>
+                        <InputGroup label="Additional Torque">
+                            <UnitInput type="torque" value={selectedSeg.payload} onChange={(val) => updateSegment(selectedSeg.id, 'payload', parseFloat(val))} readOnly={isReadOnly} />
+                        </InputGroup>
                     </div>
-                ) : <div className="h-full flex flex-col items-center justify-center text-gray-400 italic"><AlertCircle size={24} className="mb-2 opacity-20"/><p>Select a segment</p></div>}
+                ) : <div className="h-full flex flex-col items-center justify-center text-gray-400 italic"><p>Select a step to edit parameters</p></div>}
             </div>
         </div>
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden bg-white">
-        <div className="h-9 bg-gray-50 border-b border-gray-300 flex items-center px-4 space-x-4 shrink-0 overflow-x-auto">
-          {traces.filter(t => t.key !== 'masterPos' || (profileType !== 'Time Based')).map(t => (
-            <div key={t.key} className="flex items-center space-x-1.5 cursor-pointer group shrink-0" onClick={() => setTraces(traces.map(tr => tr.key === t.key ? {...tr, active: !tr.active} : tr))}>
-              {t.active ? <CheckSquare size={13} className="text-blue-600"/> : <Square size={13} className="text-gray-300 group-hover:text-gray-400"/>}
-              <div className="w-3 h-1 rounded-full" style={{backgroundColor: t.color}}></div>
-              <span className={`text-[10px] font-bold uppercase ${t.active ? 'text-gray-700' : 'text-gray-400'}`}>{t.label}</span>
+        <div className="h-9 bg-gray-50 border-b border-win-border flex items-center px-4 space-x-5 shrink-0 overflow-x-auto shadow-sm">
+          {traces.filter(t => t.key !== 'masterPos' || profileType !== 'Time Based').map(t => (
+            <div key={t.key} className="flex items-center space-x-1.5 cursor-pointer shrink-0" onClick={() => setTraces(traces.map(tr => tr.key === t.key ? {...tr, active: !tr.active} : tr))}>
+              {t.active ? <CheckSquare size={14} className="text-blue-600"/> : <Square size={14} className="text-gray-300"/>}
+              <div className="w-4 h-1 rounded-full" style={{backgroundColor: t.color}}></div>
+              <span className={`text-[10px] font-bold uppercase tracking-tighter ${t.active ? 'text-gray-700' : 'text-gray-400'}`}>{t.label}</span>
             </div>
           ))}
         </div>
 
-        <div className="flex-1 relative bg-white">
+        <div className="flex-1 relative bg-white overflow-hidden">
           <svg 
             ref={graphRef} width="100%" height="100%" className="overflow-visible"
             onMouseMove={(e) => {
               if (timeSeries.length === 0) return;
               const rect = e.currentTarget.getBoundingClientRect();
-              const t = Math.max(0, Math.min(maxT, ((e.clientX - rect.left - paddingLeft) / (rect.width - paddingLeft - paddingRight)) * maxT));
+              const relativeX = e.clientX - rect.left;
+              const t = Math.max(0, Math.min(maxT, ((relativeX - paddingLeft) / (rect.width - paddingLeft - paddingRight)) * maxT));
               setCursorTime(t);
             }}
             onMouseLeave={() => setCursorTime(null)}
           >
             {[0.2, 0.4, 0.5, 0.6, 0.8].map(p => (
-              <line key={p} x1={paddingLeft} y1={`${p*100}%`} x2={graphSize.width - paddingRight} y2={`${p*100}%`} stroke={p === 0.5 ? '#e5e5e5' : '#f5f5f5'} strokeWidth={p===0.5 ? 1 : 0.5} />
+              <line key={p} x1={paddingLeft} y1={`${p*100}%`} x2={graphSize.width - paddingRight} y2={`${p*100}%`} stroke="#f5f5f5" strokeWidth="0.5" />
             ))}
             
             {timeSeries.length > 0 && traces.filter(t => t.active).map(t => {
@@ -365,54 +387,61 @@ export const ProfileEditor = ({
             })}
 
             {cursorTime !== null && (
-              <g>
-                <line x1={scaleX(cursorTime)} y1="0" x2={scaleX(cursorTime)} y2="100%" stroke="#111" strokeDasharray="4,2" />
-                <rect x={scaleX(cursorTime) - 25} y="5" width="50" height="15" rx="2" fill="#111" />
-                <text x={scaleX(cursorTime)} y="16" textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">{cursorTime.toFixed(3)}s</text>
+              <g className="pointer-events-none">
+                <line x1={scaleX(cursorTime)} y1="0" x2={scaleX(cursorTime)} y2="100%" stroke="#111" strokeDasharray="3,3" />
+                <rect x={scaleX(cursorTime) - 25} y="2" width="50" height="15" fill="#111" rx="1" />
+                <text x={scaleX(cursorTime)} y="13" textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">{cursorTime.toFixed(3)}s</text>
               </g>
             )}
           </svg>
         </div>
 
-        <div className="h-48 bg-gray-50 border-t border-gray-300 p-2 overflow-y-auto">
-          <div className="flex justify-between items-center mb-2 px-2">
-             <span className="text-[10px] font-bold text-blue-800 uppercase">Analysis Data</span>
-             <div className="bg-blue-100 px-2 py-0.5 rounded text-[10px] font-mono font-bold text-blue-700 uppercase">
-                CURSOR TIME: {cursorTime !== null ? cursorTime.toFixed(4) : '---'} s
+        <div className="h-52 bg-win-bg border-t border-win-border p-3 flex flex-col overflow-hidden">
+          <div className="flex justify-between items-center mb-2 px-1">
+             <div className="flex items-center space-x-2">
+                <Activity size={14} className="text-win-blue" />
+                <span className="text-[10px] font-bold text-gray-700 uppercase tracking-widest">System Dynamics Analysis</span>
+             </div>
+             <div className="bg-white border border-win-border px-3 py-1 flex items-center space-x-2 shadow-sm">
+                <div className="text-[10px] text-gray-500 font-bold uppercase">Position @ Time:</div>
+                <div className="font-mono text-win-blue font-bold text-sm">{cursorTime !== null ? cursorTime.toFixed(4) : '0.0000'} s</div>
              </div>
           </div>
-          <table className="w-full text-[10px] text-left border-collapse">
-            <thead>
-              <tr className="text-gray-400 border-b border-gray-200 uppercase font-bold">
-                <th className="pb-1 pl-2">Trace</th>
-                <th className="pb-1">Cursor Value</th>
-                <th className="pb-1">Unit</th>
-                <th className="pb-1">Min</th>
-                <th className="pb-1">Max</th>
-                <th className="pb-1">RMS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {timeSeries.length > 0 ? traces.filter(t => t.active).map(t => {
-                const currentVal = timeSeries.find(p => p.t >= (cursorTime || 0))?.[t.key] || 0;
-                const vals = timeSeries.map(p => p[t.key] as number);
-                const rms = Math.sqrt(vals.reduce((acc, v) => acc + v*v, 0) / vals.length);
-                return (
-                  <tr key={t.key} className="border-b border-gray-100 hover:bg-white transition-colors">
-                    <td className="py-1.5 pl-2 font-bold flex items-center">
-                        <div className="w-2 h-2 rounded-full mr-2" style={{backgroundColor: t.color}}></div>
-                        {t.label.toUpperCase()}
-                    </td>
-                    <td className="py-1.5 font-mono text-blue-700 font-bold">{(currentVal as number).toFixed(4)}</td>
-                    <td className="py-1.5 text-gray-400">{t.unit}</td>
-                    <td className="py-1.5 font-mono text-gray-600">{Math.min(...vals).toFixed(3)}</td>
-                    <td className="py-1.5 font-mono text-gray-600">{Math.max(...vals).toFixed(3)}</td>
-                    <td className="py-1.5 font-mono text-purple-600 font-semibold">{rms.toFixed(3)}</td>
-                  </tr>
-                );
-              }) : <tr><td colSpan={6} className="py-8 text-center text-gray-400 italic uppercase">No data to display.</td></tr>}
-            </tbody>
-          </table>
+          <div className="flex-1 overflow-y-auto bg-white border border-win-border">
+            <table className="w-full text-[10px] text-left border-collapse">
+                <thead className="bg-gray-100 text-gray-500 uppercase font-bold text-[9px] border-b border-win-border">
+                <tr>
+                    <th className="p-2 border-r border-win-border">Trace</th>
+                    <th className="p-2 border-r border-win-border">Cursor Val</th>
+                    <th className="p-2 border-r border-win-border">Unit</th>
+                    <th className="p-2 border-r border-win-border">Min</th>
+                    <th className="p-2 border-r border-win-border">Max</th>
+                    <th className="p-2 text-win-blue">RMS Value</th>
+                </tr>
+                </thead>
+                <tbody>
+                {timeSeries.length > 0 ? traces.filter(t => t.active).map(t => {
+                    const currentVal = timeSeries.find(p => p.t >= (cursorTime || 0))?.[t.key] || 0;
+                    const vals = timeSeries.map(p => p[t.key] as number);
+                    const rms = Math.sqrt(vals.reduce((acc, v) => acc + v*v, 0) / vals.length);
+                    const unitLabel = t.key === 'pos' ? (posUnitType === 'angle' ? 'deg' : 'mm') : t.key === 'vel' ? (posUnitType === 'angle' ? 'deg/s' : 'mm/s') : '';
+                    return (
+                    <tr key={t.key} className="border-b border-gray-100 hover:bg-win-hover transition-colors font-mono">
+                        <td className="p-2 border-r border-win-border font-sans font-bold flex items-center">
+                            <div className="w-2.5 h-2.5 rounded-sm mr-2 shadow-sm" style={{backgroundColor: t.color}}></div>
+                            {t.label}
+                        </td>
+                        <td className="p-2 border-r border-win-border text-win-blue font-bold">{(currentVal as number).toFixed(4)}</td>
+                        <td className="p-2 border-r border-win-border text-gray-400 font-sans">{unitLabel}</td>
+                        <td className="p-2 border-r border-win-border text-gray-600">{Math.min(...vals).toFixed(3)}</td>
+                        <td className="p-2 border-r border-win-border text-gray-600">{Math.max(...vals).toFixed(3)}</td>
+                        <td className="p-2 text-purple-700 font-bold bg-purple-50/20">{rms.toFixed(3)}</td>
+                    </tr>
+                    );
+                }) : <tr><td colSpan={6} className="p-8 text-center text-gray-400 italic uppercase">No analytical data available</td></tr>}
+                </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
