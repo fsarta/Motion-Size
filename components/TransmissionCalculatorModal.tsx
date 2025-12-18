@@ -201,6 +201,14 @@ export const TransmissionCalculatorModal: React.FC<TransmissionCalculatorModalPr
                              onChange={(e) => updateCurrent('loadSideRatio', parseFloat(e.target.value))}
                           />
                        </div>
+                       {/* Gear Ratio Calculator Icon placed to the right of both textboxes */}
+                       <button 
+                          onClick={() => setIsInertiaCalcOpen(true)}
+                          className="mt-5 p-1 bg-gray-100 border border-gray-300 hover:bg-gray-200 rounded-sm flex items-center justify-center w-8 h-8 shrink-0" 
+                          title="Open Geometry Calculator for this stage"
+                        >
+                           <Calculator size={16} className="text-blue-600"/>
+                        </button>
                     </div>
                  </div>
                  <div className="pt-2 pl-4 flex items-end">

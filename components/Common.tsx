@@ -140,6 +140,16 @@ export const UnitInput = ({
           }}
         />
       </div>
+
+      {hasCalculator && (
+        <button 
+          onClick={(e) => { e.stopPropagation(); onCalculatorClick?.(); }}
+          className="ml-1 p-0.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-sm flex items-center justify-center w-6 h-6 shrink-0" 
+          title="Open Calculator"
+        >
+           <Calculator size={13} className="text-blue-600"/>
+        </button>
+      )}
       
       {/* Unit Part */}
       {availableUnits.length > 0 && (
@@ -160,16 +170,6 @@ export const UnitInput = ({
             {availableUnits.map(u => <option key={u} value={u}>{u}</option>)}
           </select>
         )
-      )}
-
-      {hasCalculator && (
-        <button 
-          onClick={onCalculatorClick}
-          className="ml-1 p-0.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-sm flex items-center justify-center w-6 h-6" 
-          title="Open Calculator"
-        >
-           <Calculator size={14} className="text-blue-600"/>
-        </button>
       )}
     </div>
   );
