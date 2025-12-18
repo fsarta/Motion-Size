@@ -63,7 +63,8 @@ export const UnitInput = ({
   readOnly,
   hasCalculator,
   onCalculatorClick,
-  unitFilter
+  unitFilter,
+  unitAsTextbox = false
 }: { 
   value: string | number | undefined, 
   onChange: (val: string) => void, 
@@ -71,7 +72,8 @@ export const UnitInput = ({
   readOnly?: boolean,
   hasCalculator?: boolean,
   onCalculatorClick?: () => void,
-  unitFilter?: string[]
+  unitFilter?: string[],
+  unitAsTextbox?: boolean
 }) => {
   const availableUnits = useMemo(() => {
     const units = getUnitsForType(type);
@@ -93,7 +95,6 @@ export const UnitInput = ({
     }
   }, [computedDisplay, isEditing]);
 
-  // Ensure current unit is always in the filtered list if filter changes
   useEffect(() => {
     if (availableUnits.length > 0 && !availableUnits.includes(currentUnit)) {
       setCurrentUnit(availableUnits[0]);
@@ -139,24 +140,36 @@ export const UnitInput = ({
           }}
         />
       </div>
+      
+      {/* Unit Part */}
+      {availableUnits.length > 0 && (
+        unitAsTextbox || type === 'ratio' ? (
+          <input
+            type="text"
+            readOnly
+            value={currentUnit}
+            className="ml-1 w-20 text-[10px] border border-gray-300 bg-gray-50 py-0.5 h-6 focus:outline-none text-gray-700 shrink-0 text-center font-bold"
+          />
+        ) : (
+          <select 
+            value={currentUnit} 
+            onChange={handleUnitChange}
+            disabled={availableUnits.length < 2}
+            className="ml-1 w-20 text-[10px] border border-gray-300 bg-gray-50 py-0.5 h-6 focus:outline-none text-gray-700 shrink-0"
+          >
+            {availableUnits.map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+        )
+      )}
+
       {hasCalculator && (
         <button 
           onClick={onCalculatorClick}
-          className="ml-0.5 p-0.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-sm" 
+          className="ml-1 p-0.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-sm flex items-center justify-center w-6 h-6" 
           title="Open Calculator"
         >
-           <Calculator size={12} className="text-gray-600"/>
+           <Calculator size={14} className="text-blue-600"/>
         </button>
-      )}
-      {availableUnits.length > 0 && (
-        <select 
-          value={currentUnit} 
-          onChange={handleUnitChange}
-          disabled={availableUnits.length < 2}
-          className="ml-1 w-20 text-[10px] border border-gray-300 bg-gray-50 py-0.5 h-6 focus:outline-none text-gray-700 shrink-0"
-        >
-          {availableUnits.map(u => <option key={u} value={u}>{u}</option>)}
-        </select>
       )}
     </div>
   );
