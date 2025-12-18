@@ -18,7 +18,7 @@ type MechanismSection = {
 };
 
 const COMMON_TRANSMISSION: MechanismSection = {
-  section: 'Related Transmission',
+  section: 'Transmission',
   fields: [
     { key: 'transRatio', label: 'Gear Ratio', unitType: 'ratio' },
     { key: 'transInertia', label: 'Reflected Inertia', unitType: 'inertia', hasCalculator: true },
@@ -37,9 +37,9 @@ const COMMON_LOAD_FIELDS: FieldConfig[] = [
 
 const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
   'Ball Screw': [
-    { section: 'Regarding Load', fields: COMMON_LOAD_FIELDS },
+    { section: 'Load', fields: COMMON_LOAD_FIELDS },
     {
-      section: 'Regarding Mechanism',
+      section: 'Mechanism',
       fields: [
         { key: 'screwLead', label: 'Lead (unit/rev)', unitType: 'length' },
         { key: 'slideMass', label: 'Slide Mass', unitType: 'mass' },
@@ -50,9 +50,9 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
     COMMON_TRANSMISSION
   ],
   'Belt': [
-    { section: 'Regarding Load', fields: COMMON_LOAD_FIELDS },
+    { section: 'Load', fields: COMMON_LOAD_FIELDS },
     {
-      section: 'Regarding Mechanism',
+      section: 'Mechanism',
       fields: [
         { key: 'driverDiameter', label: 'Driver Pitch Dia.', unitType: 'length' },
         { key: 'beltMass', label: 'Belt Mass', unitType: 'mass' },
@@ -63,9 +63,9 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
     COMMON_TRANSMISSION
   ],
   'Rack and Pinion': [
-    { section: 'Regarding Load', fields: COMMON_LOAD_FIELDS },
+    { section: 'Load', fields: COMMON_LOAD_FIELDS },
     {
-      section: 'Regarding Mechanism',
+      section: 'Mechanism',
       fields: [
         { key: 'pinionPCD', label: 'Pinion PCD', unitType: 'length' },
         { key: 'rackMass', label: 'Rack Mass', unitType: 'mass' },
@@ -77,7 +77,7 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
   ],
   'Rotation Table': [
     { 
-      section: 'Regarding Load', 
+      section: 'Load', 
       fields: [
         { key: 'rotatingInertia', label: 'Rotating Inertia', unitType: 'inertia', hasCalculator: true },
         { key: 'externalTorque', label: 'External Torque', unitType: 'torque' },
