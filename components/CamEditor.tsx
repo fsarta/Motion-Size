@@ -1,23 +1,16 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Trash2, ZoomIn, ZoomOut, Maximize, Activity, Save, RefreshCw, Layers, Layout } from 'lucide-react';
+import { Plus, Trash2, ZoomIn, ZoomOut, Maximize, Activity, Save, RefreshCw, Layers, Layout, AlertCircle } from 'lucide-react';
 import { CamTable, CamSector, CamMotionLaw } from '../types';
 import { ConfirmationModal } from './modals/ConfirmationModal';
 
 // --- Math Engines for Motion Laws ---
 
-// Standardized u = (x - x0) / (x1 - x0)
-// Returns [s, v_norm, a_norm, j_norm] where derivatives are normalized to u (0..1)
-// Real derivatives need scaling by (x1-x0) and system speed.
 const MotionLaws: Record<CamMotionLaw, (u: number) => [number, number, number, number]> = {
     'Straight Line': (u) => {
         return [u, 1, 0, 0];
     },
     'Poly5': (u) => {
-        // 10u^3 - 15u^4 + 6u^5
-        // v = 30u^2 - 60u^3 + 30u^4
-        // a = 60u - 180u^2 + 120u^3
-        // j = 60 - 360u + 360u^2
         const u2 = u*u, u3 = u2*u, u4 = u3*u, u5 = u4*u;
         return [
             10*u3 - 15*u4 + 6*u5,
@@ -27,8 +20,6 @@ const MotionLaws: Record<CamMotionLaw, (u: number) => [number, number, number, n
         ];
     },
     'Sine': (u) => {
-        // Simple Sine (Cycloidal displacement usually refers to Sine Acceleration, but here simplified)
-        // y = u - sin(2pi u)/2pi
         const pi2 = Math.PI * 2;
         return [
             u - Math.sin(pi2 * u) / pi2,
@@ -38,13 +29,10 @@ const MotionLaws: Record<CamMotionLaw, (u: number) => [number, number, number, n
         ];
     },
     'Modified Sine': (u) => {
-        // Industry standard approximation
-        // Placeholder implementation using Poly5 for visualization stability in this demo
         const u2 = u*u, u3 = u2*u, u4 = u3*u, u5 = u4*u;
         return [10*u3 - 15*u4 + 6*u5, 30*u2 - 60*u3 + 30*u4, 60*u - 180*u2 + 120*u3, 60 - 360*u + 360*u2];
     },
     'Modified Trapezoid': (u) => {
-        // Placeholder implementation using Poly5
         const u2 = u*u, u3 = u2*u, u4 = u3*u, u5 = u4*u;
         return [10*u3 - 15*u4 + 6*u5, 30*u2 - 60*u3 + 30*u4, 60*u - 180*u2 + 120*u3, 60 - 360*u + 360*u2];
     }
@@ -60,15 +48,13 @@ interface CamPoint {
 
 type GraphType = 'pos' | 'vel' | 'acc' | 'jerk';
 
-// Helper for engineering notation
 const formatEng = (val: number) => {
     if (val === 0) return "0.0000";
     const abs = Math.abs(val);
-    // Use scientific notation for very small (< 0.001) or very large (> 10000) numbers
     if (abs < 0.001 || abs >= 10000) {
-        return val.toExponential(4); // e.g. 1.2345e-5
+        return val.toExponential(4);
     }
-    return val.toFixed(4); // e.g. 123.4567
+    return val.toFixed(4);
 };
 
 export const CamEditor = ({ 
@@ -85,6 +71,7 @@ export const CamEditor = ({
     const [hoverX, setHoverX] = useState<number | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
+    const [validationError, setValidationError] = useState<string | null>(null);
 
     // Ensure sectors are sorted
     const sortedSectors = useMemo(() => {
@@ -94,7 +81,7 @@ export const CamEditor = ({
     // --- Calculation Engine ---
     const plotData = useMemo(() => {
         const points: CamPoint[] = [];
-        const resolution = 1.0; // 1 degree steps
+        const resolution = 1.0;
 
         sortedSectors.forEach(sector => {
             const rangeX = sector.masterEnd - sector.masterStart;
@@ -107,7 +94,6 @@ export const CamEditor = ({
                 const xLocal = i * resolution;
                 const currentX = sector.masterStart + xLocal;
                 
-                // Avoid double point at boundaries
                 if (points.length > 0 && Math.abs(points[points.length-1].x - currentX) < 0.01) continue;
                 if (currentX > sector.masterEnd) break;
 
@@ -118,21 +104,17 @@ export const CamEditor = ({
                 points.push({
                     x: currentX,
                     y: sector.slaveStart + (rangeY * s_norm),
-                    // Derivatives scaling: dy/dx = (rangeY/rangeX) * v_norm
-                    // For visualization, we keep them relative to geometric slope
                     v: (rangeY / rangeX) * v_norm, 
-                    a: (rangeY / (rangeX*rangeX)) * a_norm, // Convexity
-                    j: (rangeY / Math.pow(rangeX, 3)) * j_norm // Qualitative Jerk
+                    a: (rangeY / (rangeX*rangeX)) * a_norm,
+                    j: (rangeY / Math.pow(rangeX, 3)) * j_norm
                 });
             }
         });
         return points;
     }, [sortedSectors]);
 
-    // Find cursor values
     const hoverPoint = useMemo(() => {
         if (hoverX === null || plotData.length === 0) return null;
-        // Find closest point
         return plotData.reduce((prev, curr) => 
             Math.abs(curr.x - hoverX) < Math.abs(prev.x - hoverX) ? curr : prev
         );
@@ -141,8 +123,18 @@ export const CamEditor = ({
     // --- Interaction Handlers ---
 
     const updateSector = (id: string, field: keyof CamSector, value: any) => {
+        let finalValue = value;
+        
+        // Validation: masterEnd cannot exceed masterRange
+        if (field === 'masterEnd') {
+            const num = parseFloat(value);
+            if (num > camTable.masterRange) {
+                finalValue = camTable.masterRange;
+            }
+        }
+
         const newSectors = camTable.sectors.map(s => {
-            if (s.id === id) return { ...s, [field]: value };
+            if (s.id === id) return { ...s, [field]: finalValue };
             return s;
         });
 
@@ -151,8 +143,8 @@ export const CamEditor = ({
             const idx = newSectors.findIndex(s => s.id === id);
             if (idx >= 0 && idx < newSectors.length - 1) {
                 const nextSec = newSectors[idx+1];
-                if (field === 'masterEnd') nextSec.masterStart = parseFloat(value);
-                if (field === 'slaveEnd') nextSec.slaveStart = parseFloat(value);
+                if (field === 'masterEnd') nextSec.masterStart = parseFloat(finalValue);
+                if (field === 'slaveEnd') nextSec.slaveStart = parseFloat(finalValue);
             }
         }
 
@@ -171,6 +163,11 @@ export const CamEditor = ({
         const newStartM = last ? last.masterEnd : 0;
         const newStartS = last ? last.slaveEnd : 0;
         
+        if (newStartM >= camTable.masterRange) {
+            setValidationError("Cannot add more sectors. The Master Cycle is already fully defined.");
+            return;
+        }
+
         const newSector: CamSector = {
             id: Date.now().toString(),
             masterStart: newStartM,
@@ -187,30 +184,32 @@ export const CamEditor = ({
         onChange({ ...camTable, sectors: camTable.sectors.filter(s => s.id !== id) });
     };
 
+    const handleRequestSave = () => {
+        const lastSector = sortedSectors[sortedSectors.length - 1];
+        if (lastSector.masterEnd < camTable.masterRange) {
+            setValidationError(`Validation Error: The profile must cover the entire Master Cycle. Current profile ends at ${lastSector.masterEnd} but cycle is ${camTable.masterRange}.`);
+            return;
+        }
+        setIsSaveConfirmOpen(true);
+    };
+
     const handleSaveConfirm = () => {
-        // Logic to finalize save would go here (e.g. API call)
-        // Since state is updated via onChange in real-time, this is symbolic or "commit"
         setIsSaveConfirmOpen(false);
     };
 
     // --- Graph Rendering Helpers ---
-    const width = 600; // Internal SVG coord width
-    // Height will vary based on stacked vs single
+    const width = 600;
     const padding = 20;
-
     const xMax = camTable.masterRange;
     
-    // Calculate global Min/Max for scaling
     const limits = useMemo(() => {
         if (plotData.length === 0) return { pos:[0,10], vel:[0,1], acc:[0,1], jerk:[0,1] };
-        
         const getLimits = (arr: number[]) => {
             let min = Math.min(...arr);
             let max = Math.max(...arr);
             if (max === min) { max+=1; min-=1; }
             return [min, max];
         };
-
         return {
             pos: getLimits(plotData.map(p => p.y)),
             vel: getLimits(plotData.map(p => p.v)),
@@ -221,26 +220,19 @@ export const CamEditor = ({
 
     const scaleX = (val: number) => padding + (val / xMax) * (width - 2*padding);
     
-    // Reusable Graph Render Function
     const renderGraph = (type: GraphType, height: number, color: string, showXAxis: boolean) => {
         const [min, max] = limits[type] as [number, number];
         const range = max - min;
-        
-        // Scale Y to fit height with padding
         const scaleY = (val: number) => {
             const norm = (val - min) / range;
             return (height - padding) - (norm * (height - 2*padding));
         };
-
         const pathD = plotData.length > 0 ? plotData.map((p, i) => {
             const x = scaleX(p.x);
-            // Map type to property
             const val = type === 'pos' ? p.y : type === 'vel' ? p.v : type === 'acc' ? p.a : p.j;
             const y = scaleY(val);
             return `${i===0?'M':'L'} ${x.toFixed(1)},${y.toFixed(1)}`;
         }).join(" ") : "";
-
-        // Zero Line Y
         const zeroY = scaleY(0);
 
         return (
@@ -251,35 +243,22 @@ export const CamEditor = ({
                 className="bg-white border-b border-gray-200 block"
                 onMouseMove={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
-                    const ratio = (e.clientX - rect.left - 10) / (rect.width - 20); // Approx correction for padding
-                    // Better: reverse map ratio
-                    // Since viewBox is set, and preservedAspectRatio=none, exact mapping depends on container.
-                    // Simplified:
                     const localX = e.clientX - rect.left;
                     const r = localX / rect.width;
                     setHoverX(Math.max(0, Math.min(xMax, r * xMax)));
                 }}
                 onMouseLeave={() => setHoverX(null)}
             >
-                {/* Grid Lines */}
                 <line x1={padding} y1={padding} x2={padding} y2={height-padding} stroke="#eee" />
                 <line x1={width-padding} y1={padding} x2={width-padding} y2={height-padding} stroke="#eee" />
-                
-                {/* Zero Line (only if 0 is within range, and mostly for derivatives) */}
                 {min < 0 && max > 0 && (
                     <line x1={padding} y1={zeroY} x2={width-padding} y2={zeroY} stroke="#ddd" strokeDasharray="4,2"/>
                 )}
-
-                {/* Path */}
                 <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>
-
-                {/* Sector Lines */}
                 {sortedSectors.map(s => {
                     const x = scaleX(s.masterEnd);
                     return <line key={s.id} x1={x} y1={padding} x2={x} y2={height-padding} stroke="#f3f4f6" />;
                 })}
-
-                {/* Cursor */}
                 {hoverX !== null && (
                     <line 
                         x1={scaleX(hoverX)} y1={padding} 
@@ -287,12 +266,9 @@ export const CamEditor = ({
                         stroke="black" strokeDasharray="3,3" strokeWidth="1"
                     />
                 )}
-
-                {/* Labels */}
                 <text x={padding} y={padding - 5} fontSize="10" fill={color} fontWeight="bold" className="uppercase">{type}</text>
-                
                 {showXAxis && (
-                   <text x={width/2} y={height-5} textAnchor="middle" fontSize="10" fill="#999">Master Position (deg)</text>
+                   <text x={width/2} y={height-5} textAnchor="middle" fontSize="10" fill="#999">Master Position ({camTable.masterRange} Cycle)</text>
                 )}
             </svg>
         );
@@ -300,6 +276,7 @@ export const CamEditor = ({
 
     return (
         <div className="flex flex-col h-full bg-gray-100">
+            {/* Save Confirmation Modal */}
             <ConfirmationModal 
                 isOpen={isSaveConfirmOpen}
                 title="Confirm Save"
@@ -310,15 +287,32 @@ export const CamEditor = ({
                 onCancel={() => setIsSaveConfirmOpen(false)}
             />
 
+            {/* Validation Error Modal */}
+            <ConfirmationModal
+                isOpen={!!validationError}
+                title="Validation Error"
+                message={
+                    <div className="flex flex-col items-center">
+                        <AlertCircle size={24} className="text-red-500 mb-2"/>
+                        <p>{validationError}</p>
+                    </div>
+                }
+                variant="danger"
+                confirmLabel="OK"
+                onConfirm={() => setValidationError(null)}
+                onCancel={() => setValidationError(null)}
+                cancelLabel="Close"
+            />
+
             {/* Toolbar */}
             <div className="h-10 bg-white border-b border-gray-300 flex items-center px-4 justify-between shrink-0">
                 <div className="flex items-center space-x-4">
                      <span className="font-bold text-gray-700">{camTable.name}</span>
                      <div className="h-4 w-px bg-gray-300"></div>
-                     <div className="flex space-x-1 text-xs">
+                     <div className="flex space-x-1 text-xs items-center">
                          <span className="text-gray-500">Master Cycle:</span>
                          <input 
-                            className="w-16 border border-gray-300 text-center focus:border-blue-500 focus:outline-none" 
+                            className="w-16 border border-gray-300 text-center focus:border-blue-500 focus:outline-none h-6" 
                             type="number"
                             value={camTable.masterRange} 
                             onChange={(e) => handleMasterRangeChange(e.target.value)} 
@@ -345,7 +339,7 @@ export const CamEditor = ({
                      </div>
 
                      <button 
-                        onClick={() => setIsSaveConfirmOpen(true)}
+                        onClick={handleRequestSave}
                         className="flex items-center px-3 py-1 bg-blue-600 text-white text-xs rounded shadow hover:bg-blue-700"
                      >
                          <Save size={12} className="mr-1"/> Save Table
@@ -381,10 +375,10 @@ export const CamEditor = ({
                                         <td className="p-2 font-mono">{sector.masterStart.toFixed(1)}</td>
                                         <td className="p-2">
                                             <input 
-                                                className="w-16 border border-transparent hover:border-gray-300 bg-transparent px-1 focus:bg-white focus:outline-none"
+                                                className={`w-16 border border-transparent hover:border-gray-300 bg-transparent px-1 focus:bg-white focus:outline-none ${sector.masterEnd === camTable.masterRange ? 'font-bold' : ''}`}
                                                 type="number"
                                                 value={sector.masterEnd}
-                                                onChange={(e) => updateSector(sector.id, 'masterEnd', parseFloat(e.target.value))}
+                                                onChange={(e) => updateSector(sector.id, 'masterEnd', e.target.value)}
                                             />
                                         </td>
                                         <td className="p-2">
@@ -392,7 +386,7 @@ export const CamEditor = ({
                                                 className="w-16 border border-transparent hover:border-gray-300 bg-transparent px-1 focus:bg-white focus:outline-none font-bold text-blue-700"
                                                 type="number"
                                                 value={sector.slaveEnd}
-                                                onChange={(e) => updateSector(sector.id, 'slaveEnd', parseFloat(e.target.value))}
+                                                onChange={(e) => updateSector(sector.id, 'slaveEnd', e.target.value)}
                                             />
                                         </td>
                                         <td className="p-2">
@@ -415,7 +409,7 @@ export const CamEditor = ({
                         </table>
                         
                         <div className="p-4 text-gray-400 text-[10px] italic text-center">
-                           Note: "Slave Start" is automatically inferred from the previous sector's "Slave End".
+                           Note: The last segment must end at <strong>{camTable.masterRange}</strong>.
                         </div>
                     </div>
                 </div>
