@@ -41,12 +41,16 @@ export interface MotorSpec {
   vendor: string;
   model: string;
   ratedSpeed: number; // rpm
+  peakSpeed: number; // rpm
   ratedTorque: number; // Nm
+  peakTorque: number; // Nm
   ratedPower: number; // kW
   ratedCurrent: number; // Arms
   efficiency: number; // %
   powerFactor: number;
   inertia: number; // kg cm^2
+  allowableInertiaRatio: number;
+  costIndex: number; // Relative cost factor
 }
 
 export interface DriveSpec {
