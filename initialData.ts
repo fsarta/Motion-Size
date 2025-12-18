@@ -1,3 +1,4 @@
+
 import { TreeNode } from './types';
 
 export const initialData: TreeNode[] = [
@@ -18,130 +19,39 @@ export const initialData: TreeNode[] = [
     },
     children: [
       { 
-        id: "x", 
+        id: "axis_1", 
         label: "Axis 1", 
         icon: "axis",
         type: "axis",
         expanded: true,
         parameters: {
           axisName: "Axis 1",
-          profileType: "Master/Follower"
-        },
-        children: [
-           { 
-             id: "xc", 
-             label: "Conveyor", 
-             icon: "component", 
-             type: "mechanism",
-             parameters: {
-               mechanismType: "Conveyor",
-               massLoad: "50.0",
-               massBelt: "5.2",
-               frictionCoeff: "0.15",
-               inclineAngle: "0",
-               pulleyRadius: "45.0",
-               additionalForce: "0"
-             }
-           },
-           { 
-             id: "xg", 
-             label: "T1: Gearbox", 
-             icon: "component", 
-             type: "gearbox",
-             parameters: {
-               vendor: "Generic",
-               ratio: "10.0",
-               efficiency: "95",
-               inertia: "0.5",
-               backlash: "4",
-               maxInputSpeed: "6000"
-             }
-           },
-           { 
-             id: "xd", 
-             label: "Drive & Motor", 
-             icon: "drive", 
-             type: "motor_drive",
-             parameters: {
-               motorVendor: "Siemens",
-               motorModel: "1FK7060-2AC71",
-               ratedSpeed: "3000",
-               ratedTorque: "6.0",
-               ratedPower: "1.88",
-               ratedCurrent: "4.2",
-               motorEfficiency: "93.0",
-               powerFactor: "0.92",
-               motorInertia: "3.4",
-               driveModel: "S120-3A-400V",
-               driveSupplyVoltage: "400",
-               pwmFrequency: "8",
-               driveMaxCurrent: "18.0"
-             }
-           }
-        ]
+          profileType: "Master/Follower",
+          mechanismType: "Conveyor",
+          massLoad: "50.0",
+          frictionCoeff: "0.15",
+          inclineAngle: "0",
+          pulleyRadius: "45.0",
+          motorVendor: "Siemens",
+          motorModel: "1FK7060-2AC71",
+          gearRatio: "10.0"
+        }
       },
       { 
-        id: "y", 
+        id: "axis_2", 
         label: "Axis 2", 
         icon: "axis",
         type: "axis",
         expanded: true,
         parameters: {
           axisName: "Axis 2",
-          profileType: "Time Based"
-        },
-        children: [
-           { 
-             id: "yc", 
-             label: "Rack & Pinion", 
-             icon: "component", 
-             type: "mechanism",
-             parameters: {
-               mechanismType: "Rack & Pinion",
-               massLoad: "120.0",
-               massBelt: "0",
-               frictionCoeff: "0.1",
-               inclineAngle: "0",
-               pulleyRadius: "0",
-               additionalForce: "100"
-             }
-           },
-           { 
-             id: "yg", 
-             label: "T1: Gearbox", 
-             icon: "component", 
-             type: "gearbox",
-             parameters: {
-               vendor: "Stober",
-               ratio: "5.0",
-               efficiency: "96",
-               inertia: "0.8",
-               backlash: "2",
-               maxInputSpeed: "5000"
-             }
-           },
-           { 
-             id: "yd", 
-             label: "Drive & Motor", 
-             icon: "drive", 
-             type: "motor_drive",
-             parameters: {
-               motorVendor: "Siemens",
-               motorModel: "1FK7080-2AF71",
-               ratedSpeed: "3000",
-               ratedTorque: "12.0",
-               ratedPower: "3.5",
-               ratedCurrent: "7.8",
-               motorEfficiency: "94.5",
-               powerFactor: "0.94",
-               motorInertia: "6.2",
-               driveModel: "S120-3A-400V",
-               driveSupplyVoltage: "400",
-               pwmFrequency: "4",
-               driveMaxCurrent: "24.0"
-             }
-           }
-        ]
+          profileType: "Time Based",
+          mechanismType: "Ball Screw",
+          massLoad: "120.0",
+          screwLead: "10",
+          motorVendor: "Siemens",
+          motorModel: "1FK7080-2AF71"
+        }
       }
     ]
   }
