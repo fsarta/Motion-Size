@@ -234,9 +234,6 @@ export const ProfileEditor = ({
               updated[field] = timeVal > 0 ? dv / timeVal : updated[field];
           } else if (field === 'jerk') {
               const timeVal = parseFloat(value);
-              // Simple jerk calculation: dv / T_acc^2 * factor? 
-              // Usually jerk is dv / (Ta * Tj) where Tj is time to reach peak acc.
-              // To satisfy user simplicity: physical jerk = Accel / JerkTime
               updated.jerk = timeVal > 0 ? updated.accel / timeVal : updated.jerk;
           }
       }
@@ -274,7 +271,6 @@ export const ProfileEditor = ({
     return (v: number) => (graphSize.height - paddingBottom) - ((v - min) / (range || 1)) * (graphSize.height - paddingTop - paddingBottom);
   };
 
-  // Helper to get time value from physical value for display in Time-Mode
   const getTimeValue = (val: number, field: 'accel' | 'decel' | 'jerk') => {
     if (val === 0) return 0;
     const idx = segments.findIndex(s => s.id === selectedId);
@@ -313,14 +309,14 @@ export const ProfileEditor = ({
                         </div>
                     </div>
                 )}
-                <table className="w-full text-left border-collapse">
-                    <thead className="bg-gray-100 sticky top-0 border-b border-win-border z-10">
-                        <tr className="text-[9px] text-gray-500 uppercase font-bold">
-                            <th className="p-2 w-8">#</th>
-                            <th className="p-2">Law</th>
-                            <th className="p-2">Abs Time (s)</th>
-                            <th className="p-2">Abs Dist ({posUnitType === 'angle' ? 'deg' : 'mm'})</th>
-                            {!isReadOnly && <th className="p-2 w-8"></th>}
+                <table className="w-full text-xs text-left">
+                    <thead className="bg-gray-100 text-gray-500 font-semibold sticky top-0 z-10">
+                        <tr>
+                            <th className="p-2 border-b w-8">#</th>
+                            <th className="p-2 border-b">Law</th>
+                            <th className="p-2 border-b">Time (s)</th>
+                            <th className="p-2 border-b">Dist ({posUnitType === 'angle' ? 'deg' : 'mm'})</th>
+                            {!isReadOnly && <th className="p-2 border-b w-8"></th>}
                         </tr>
                     </thead>
                     <tbody>
@@ -330,20 +326,22 @@ export const ProfileEditor = ({
                             return acc;
                         }, [] as any[]).map((s, i) => (
                             <tr key={s.id} onClick={() => setSelectedId(s.id)}
-                                className={`cursor-pointer border-b border-gray-100 transition-colors ${selectedId === s.id ? 'bg-win-select font-bold' : 'hover:bg-win-hover'}`}>
+                                className={`cursor-pointer border-b border-gray-100 transition-colors group ${selectedId === s.id ? 'bg-blue-50 font-bold' : 'hover:bg-blue-50'}`}>
                                 <td className="p-2 text-gray-400">{i+1}</td>
                                 <td className="p-2 text-win-blue">{s.type}</td>
                                 <td className="p-2 font-mono">{s.absT.toFixed(3)}</td>
                                 <td className="p-2 font-mono">{s.absD.toFixed(1)}</td>
                                 {!isReadOnly && (
-                                    <td className="p-2">
+                                    <td className="p-2 text-center">
                                         <button onClick={(e) => { 
                                             e.stopPropagation(); 
                                             const filtered = segments.filter(seg => seg.id !== s.id);
                                             setSegments(filtered);
                                             if (filtered.length > 0) setSelectedId(filtered[0].id);
                                             onProfileChange(JSON.stringify(filtered));
-                                        }} className="text-gray-300 hover:text-red-600"><Trash2 size={12}/></button>
+                                        }} className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-600 transition-all">
+                                            <Trash2 size={12}/>
+                                        </button>
                                     </td>
                                 )}
                             </tr>
@@ -462,7 +460,7 @@ export const ProfileEditor = ({
                 <span className="text-[10px] font-bold text-gray-700 uppercase tracking-widest">System Dynamics Analysis</span>
              </div>
              <div className="bg-white border border-win-border px-3 py-1 flex items-center space-x-2 shadow-sm">
-                <div className="text-[10px] text-gray-500 font-bold uppercase">Position @ Time:</div>
+                <div className="text-[10px] text-gray-500 font-bold uppercase">Time:</div>
                 <div className="font-mono text-win-blue font-bold text-sm">{cursorTime !== null ? cursorTime.toFixed(4) : '0.0000'} s</div>
              </div>
           </div>
