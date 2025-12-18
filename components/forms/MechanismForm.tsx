@@ -194,8 +194,8 @@ export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p:
   };
 
   const isFriction = calculatorField === 'frictionCoeff';
-  const isTrans = calculatorField === 'transInertia' || calculatorField === 'ratio';
-  const isInertia = calculatorField && (calculatorField.toLowerCase().includes('inertia') && calculatorField !== 'transInertia');
+  const isTrans = calculatorField === 'ratio';
+  const isInertia = calculatorField && (calculatorField.toLowerCase().includes('inertia'));
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-win-panel">
@@ -232,7 +232,7 @@ export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p:
       {/* Top Visualizer Area */}
       <div className="flex space-x-4 mb-6 shrink-0 h-[220px]">
         <MechanismVisualizer type={mechType} angle={parseFloat(params.inclineAngle || 0)} />
-        <div className="w-[520px] bg-gray-50 border border-gray-300 p-3 rounded-sm shadow-sm shrink-0">
+        <div className="w-[420px] bg-gray-50 border border-gray-300 p-3 rounded-sm shadow-sm shrink-0">
            <h4 className="text-[11px] font-bold text-gray-700 uppercase mb-3 border-b border-gray-200 pb-1">Mechanism Selector</h4>
            <div className="space-y-4">
              <InputGroup label="Select Type">
@@ -245,7 +245,7 @@ export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p:
              </InputGroup>
              <div className="p-2.5 bg-blue-50 border border-blue-100 rounded text-[10px] text-blue-700 leading-relaxed">
                 <div className="font-bold uppercase mb-1 flex items-center"><Info size={12} className="mr-1"/> Logic Info</div>
-                Selecting a mechanism type updates the parameters and visualizer below to match the selected kinematics. All transmission parameters can be calculated using the dedicated Transmission Calculator.
+                Selecting a mechanism type updates the parameters and visualizer below. Use the Transmission Calculator (Gear Ratio icon) for multi-stage ratios, or Inertia Calculator for component properties.
              </div>
            </div>
         </div>
