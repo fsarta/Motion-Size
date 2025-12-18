@@ -194,7 +194,9 @@ export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p:
   };
 
   const isFriction = calculatorField === 'frictionCoeff';
+  // Gear Ratio (ratio) opens the multi-stage Transmission Calculator
   const isTrans = calculatorField === 'ratio';
+  // Standard inertia calculator for geometric components AND now for reflected inertia of transmission too
   const isInertia = calculatorField && (calculatorField.toLowerCase().includes('inertia'));
 
   return (
@@ -210,11 +212,12 @@ export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p:
       <TransmissionCalculatorModal
         isOpen={!!calculatorField && !!isTrans}
         onClose={() => setCalculatorField(null)}
-        onAccept={(inertia, ratio, efficiency) => {
+        onAccept={(inertia, ratio, efficiency, torque) => {
            onUpdate({ 
              transInertia: inertia,
              ratio: ratio,
-             transEfficiency: (parseFloat(efficiency) * 100).toString()
+             transEfficiency: (parseFloat(efficiency) * 100).toString(),
+             transAddTorque: torque
            });
            setCalculatorField(null);
         }}

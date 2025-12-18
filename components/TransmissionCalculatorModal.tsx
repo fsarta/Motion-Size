@@ -12,13 +12,13 @@ interface TransmissionComponent {
   loadSideRatio: number;
   inertia: number; // kg cm^2
   torque: number; // Nm
-  efficiency: number;
+  efficiency: number; // 0-1 factor
 }
 
 interface TransmissionCalculatorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAccept: (inertia: string, ratio: string, efficiency: string) => void;
+  onAccept: (inertia: string, ratio: string, efficiency: string, torque: string) => void;
   title: string;
 }
 
@@ -31,7 +31,7 @@ export const TransmissionCalculatorModal: React.FC<TransmissionCalculatorModalPr
   title
 }) => {
   const [components, setComponents] = useState<TransmissionComponent[]>([
-    { id: 1, type: 'Shaft', name: 'Main Shaft', motorSideRatio: 1, loadSideRatio: 1, inertia: 0, torque: 0, efficiency: 1 }
+    { id: 1, type: 'Gear box', name: 'Main Gearbox', motorSideRatio: 5, loadSideRatio: 1, inertia: 77.067, torque: 8.07, efficiency: 0.94 }
   ]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isInertiaCalcOpen, setIsInertiaCalcOpen] = useState(false);
@@ -56,18 +56,25 @@ export const TransmissionCalculatorModal: React.FC<TransmissionCalculatorModalPr
   };
 
   // Results Calculation
+  // Standard sizing software reflects components starting from the motor towards the load.
+  // J_reflected = J1 + J2/i1^2 + J3/(i1*i2)^2 ...
+  // T_reflected = T1 + T2/(i1*eff1) + T3/(i1*i2*eff1*eff2) ...
   const results = components.reduce((acc, c) => {
+    // Ratio of THIS stage
     const stageRatio = c.loadSideRatio !== 0 ? c.motorSideRatio / c.loadSideRatio : 1;
-    const prevRatio = acc.ratio;
-    const newTotalRatio = prevRatio * stageRatio;
     
-    // Inertia reflected to motor
-    const reflectedInertia = acc.inertia + (c.inertia / Math.pow(newTotalRatio, 2));
+    // Reflect current component values back to motor using CUMULATIVE ratio BEFORE this stage
+    const reflectedInertia = acc.inertia + (c.inertia / Math.pow(acc.ratio, 2));
     
+    // Efficiency only affects components *after* the stage that introduces it.
+    // However, usually "Added Torque" of a stage is defined as drag at the input of that stage.
+    const reflectedTorque = acc.torque + (c.torque / (acc.ratio * acc.efficiency));
+    
+    // Update CUMULATIVE values for the NEXT stage
     return {
-      ratio: newTotalRatio,
+      ratio: acc.ratio * stageRatio,
       inertia: reflectedInertia,
-      torque: acc.torque + (c.torque / newTotalRatio),
+      torque: reflectedTorque,
       efficiency: acc.efficiency * c.efficiency
     };
   }, { ratio: 1, inertia: 0, torque: 0, efficiency: 1 });
@@ -112,24 +119,24 @@ export const TransmissionCalculatorModal: React.FC<TransmissionCalculatorModalPr
                 <rect x="350" y="72" width="20" height="6" fill="#9ca3af" stroke="#111" />
              </svg>
           </div>
-          <div className="w-80 p-6 flex flex-col justify-center bg-gray-50">
-             <h3 className="text-xl font-bold text-gray-800 mb-6 border-b border-gray-300 pb-2 text-right">Results</h3>
-             <div className="space-y-3">
+          <div className="w-80 p-6 flex flex-col justify-center bg-gray-50 border-l border-gray-200">
+             <h3 className="text-2xl font-bold text-gray-800 mb-6 border-b border-gray-300 pb-2 text-right">Results</h3>
+             <div className="space-y-4">
                  <div className="flex justify-between items-center text-sm">
                     <span className="font-bold text-gray-600">Gear Ratio:</span>
-                    <span className="font-mono font-bold">{results.ratio.toFixed(2)}</span>
+                    <span className="font-mono font-bold text-gray-900">{results.ratio % 1 === 0 ? results.ratio.toString() : results.ratio.toFixed(2)}</span>
                  </div>
                  <div className="flex justify-between items-center text-sm">
                     <span className="font-bold text-gray-600">Inertia (kg·cm²):</span>
-                    <span className="font-mono font-bold text-win-blue">{results.inertia.toFixed(4)}</span>
+                    <span className="font-mono font-bold text-win-blue">{results.inertia.toFixed(results.inertia > 10 ? 2 : 4)}</span>
                  </div>
                  <div className="flex justify-between items-center text-sm">
                     <span className="font-bold text-gray-600">Torque (N·m):</span>
-                    <span className="font-mono font-bold">{results.torque.toFixed(2)}</span>
+                    <span className="font-mono font-bold text-gray-900">{results.torque.toFixed(2)}</span>
                  </div>
                  <div className="flex justify-between items-center text-sm">
                     <span className="font-bold text-gray-600">Efficiency:</span>
-                    <span className="font-mono font-bold">{results.efficiency.toFixed(2)}</span>
+                    <span className="font-mono font-bold text-gray-900">{results.efficiency.toFixed(2)}</span>
                  </div>
              </div>
           </div>
@@ -264,7 +271,7 @@ export const TransmissionCalculatorModal: React.FC<TransmissionCalculatorModalPr
 
         {/* Footer Buttons */}
         <div className="h-16 bg-gray-100 border-t border-gray-300 flex items-center justify-end px-6 space-x-4">
-           <button onClick={() => onAccept(results.inertia.toString(), results.ratio.toString(), results.efficiency.toString())} className="px-12 py-2 bg-blue-600 border border-blue-700 hover:bg-blue-700 text-white font-bold rounded shadow-md">Accept</button>
+           <button onClick={() => onAccept(results.inertia.toString(), results.ratio.toString(), results.efficiency.toString(), results.torque.toString())} className="px-12 py-2 bg-blue-600 border border-blue-700 hover:bg-blue-700 text-white font-bold rounded shadow-md">Accept</button>
            <button onClick={onClose} className="px-12 py-2 bg-white border border-gray-400 hover:bg-gray-50 text-gray-800 font-bold rounded shadow-sm">Cancel</button>
         </div>
       </div>
