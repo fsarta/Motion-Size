@@ -62,19 +62,6 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
     },
     COMMON_TRANSMISSION
   ],
-  'Chain and Sprocket': [
-    { section: 'Regarding Load', fields: COMMON_LOAD_FIELDS },
-    {
-      section: 'Regarding Mechanism',
-      fields: [
-        { key: 'sprocketPCD', label: 'Sprocket PCD', unitType: 'length' },
-        { key: 'chainMass', label: 'Chain Mass', unitType: 'mass' },
-        { key: 'sprocketInertia', label: 'Sprocket/Idler Inertia', unitType: 'inertia', hasCalculator: true },
-        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
-    },
-    COMMON_TRANSMISSION
-  ],
   'Rack and Pinion': [
     { section: 'Regarding Load', fields: COMMON_LOAD_FIELDS },
     {
@@ -88,39 +75,6 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
     },
     COMMON_TRANSMISSION
   ],
-  'Roll Feeder': [
-    { 
-      section: 'Regarding Load', 
-      fields: [
-        { key: 'pressForce', label: 'Press Force', unitType: 'force' },
-        { key: 'tensionForce', label: 'Tension Force', unitType: 'force' },
-        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
-        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
-        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
-      ] 
-    },
-    {
-      section: 'Regarding Mechanism',
-      fields: [
-        { key: 'rollDiameter', label: 'Driving Roller Dia.', unitType: 'length' },
-        { key: 'drivingInertia', label: 'Driving Inertia', unitType: 'inertia', hasCalculator: true },
-        { key: 'drivenInertia', label: 'Driven Inertia', unitType: 'inertia', hasCalculator: true },
-        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
-    },
-    COMMON_TRANSMISSION
-  ],
-  'Linear Motor': [
-    { section: 'Regarding Load', fields: COMMON_LOAD_FIELDS },
-    {
-      section: 'Regarding Mechanism',
-      fields: [
-        { key: 'forceMargin', label: 'Force Margin', unitType: 'force' },
-        { key: 'slideMass', label: 'Slide Mass', unitType: 'mass' },
-      ]
-    }
-    // No transmission for Linear Motor as per spec
-  ],
   'Rotation Table': [
     { 
       section: 'Regarding Load', 
@@ -130,19 +84,6 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
         { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
         { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
       ] 
-    },
-    COMMON_TRANSMISSION
-  ],
-  'Crank': [
-    { section: 'Regarding Load', fields: COMMON_LOAD_FIELDS },
-    {
-      section: 'Regarding Mechanism',
-      fields: [
-        { key: 'crankRadius', label: 'Crank Radius', unitType: 'length' },
-        { key: 'rodLength', label: 'Connecting Rod Len.', unitType: 'length' },
-        { key: 'crankInertia', label: 'Crank Inertia', unitType: 'inertia', hasCalculator: true },
-        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
     },
     COMMON_TRANSMISSION
   ]
@@ -207,7 +148,7 @@ export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p:
 
       <div className="flex flex-col">
         <div className="flex items-center mb-4 border-b border-gray-100 pb-2">
-            <div className="text-xs font-bold text-gray-500 mr-4">MECH. TYPE:</div>
+            <div className="text-xs font-bold text-gray-500 mr-4 uppercase">Mechanism Type:</div>
             <div className="w-64">
                 <Select 
                 value={mechType} 

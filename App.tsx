@@ -43,19 +43,6 @@ const App = () => {
     }
   ]);
 
-  const toggleNode = (id: string) => {
-    const toggleRecursive = (nodes: TreeNode[]): TreeNode[] => {
-      return nodes.map(node => {
-        if (node.id === id) return { ...node, expanded: !node.expanded };
-        if (node.children) return { ...node, children: toggleRecursive(node.children) };
-        return node;
-      });
-    };
-    setData(toggleRecursive(data));
-  };
-
-  const handleSelect = (id: string) => setSelectedNodeId(id);
-
   const findNode = (nodes: TreeNode[], id: string): TreeNode | null => {
     for (const node of nodes) {
       if (node.id === id) return node;
@@ -66,6 +53,21 @@ const App = () => {
     }
     return null;
   };
+
+  const toggleNode = (id: string) => {
+    setData(prev => {
+        const toggleRecursive = (nodes: TreeNode[]): TreeNode[] => {
+            return nodes.map(node => {
+                if (node.id === id) return { ...node, expanded: !node.expanded };
+                if (node.children) return { ...node, children: toggleRecursive(node.children) };
+                return node;
+            });
+        };
+        return toggleRecursive(prev);
+    });
+  };
+
+  const handleSelect = (id: string) => setSelectedNodeId(id);
 
   const handleUpdateNode = (id: string, newParams: Record<string, any>) => {
     setData(prev => {
@@ -86,11 +88,15 @@ const App = () => {
 
   const addAxis = () => {
     setData(prev => {
-      const newData = [...prev];
-      const targetGroup = newData.find(n => n.type === 'group' && (n.id === selectedNodeId || n.children?.some(c => c.id === selectedNodeId))) || newData[0];
+      const newData = JSON.parse(JSON.stringify(prev));
+      // Find the group to add axis to (selected group or the first group found)
+      let targetGroup = findNode(newData, selectedNodeId);
+      if (!targetGroup || targetGroup.type !== 'group') {
+          targetGroup = newData.find((n: any) => n.type === 'group') || newData[0];
+      }
 
       if (targetGroup && targetGroup.children) {
-        const count = targetGroup.children.length + 1;
+        const count = targetGroup.children.filter((c: any) => c.type === 'axis').length + 1;
         const axisLabel = `Axis ${count}`;
         const newAxis: TreeNode = {
           id: `axis_${Date.now()}`,
@@ -100,7 +106,9 @@ const App = () => {
           parameters: {
              axisName: axisLabel,
              profileType: 'Time Based',
-             mechanismType: 'Ball Screw'
+             mechanismType: 'Ball Screw',
+             gearRatioNum: 1,
+             gearRatioDen: 1
           }
         };
         targetGroup.children.push(newAxis);
@@ -151,7 +159,7 @@ const App = () => {
   const handlePaste = (targetId: string | null) => {
     if (!clipboard) return;
     setData(prev => {
-      let newData = [...prev];
+      let newData = JSON.parse(JSON.stringify(prev));
       if (clipboard.isCut) {
         const removeRecursive = (nodes: TreeNode[]): TreeNode[] => {
           return nodes.filter(n => n.id !== clipboard.node.id).map(n => ({
@@ -166,14 +174,15 @@ const App = () => {
       newNode.id = `${newNode.type}_${Date.now()}`;
       if (!clipboard.isCut) newNode.label += " (Copy)";
       
-      const target = targetId ? findNode(newData, targetId) : newData[0];
-      if (target) {
-        if (newNode.type === 'group') {
-           newData.push(newNode);
-        } else if (newNode.type === 'axis') {
-           const group = target.type === 'group' ? target : findParentGroup(newData, target.id);
-           if (group && group.children) group.children.push(newNode);
-        }
+      if (newNode.type === 'group') {
+         newData.push(newNode);
+      } else {
+         const target = targetId ? findNode(newData, targetId) : newData[0];
+         const group = (target?.type === 'group') ? target : findParentGroup(newData, targetId || '');
+         if (group && group.children) {
+             group.children.push(newNode);
+             group.expanded = true;
+         }
       }
       return newData;
     });
@@ -194,7 +203,7 @@ const App = () => {
   const handleMoveNode = (draggedId: string, targetGroupId: string) => {
     if (draggedId === targetGroupId) return;
     setData(prev => {
-      let newData = [...prev];
+      let newData = JSON.parse(JSON.stringify(prev));
       const nodeToMove = findNode(newData, draggedId);
       if (!nodeToMove) return prev;
 
@@ -209,6 +218,7 @@ const App = () => {
       const targetGroup = findNode(newData, targetGroupId);
       if (targetGroup && targetGroup.children) {
         targetGroup.children.push(nodeToMove);
+        targetGroup.expanded = true;
       }
       return newData;
     });

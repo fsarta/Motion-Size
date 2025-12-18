@@ -13,9 +13,9 @@ import { GearboxForm } from './forms/GearboxForm';
 import { MotorDriveForm } from './forms/MotorDriveForm';
 import { AxisForm } from './forms/AxisForm';
 
-// Simple placeholders for split Motor/Drive and BOM
 const MotorForm = (props: any) => <MotorDriveForm {...props} onlyMotor={true} />;
 const DriveForm = (props: any) => <MotorDriveForm {...props} onlyDrive={true} />;
+
 const BOMView = ({ params }: { params: any }) => (
   <div className="p-4">
     <div className="text-sm font-bold mb-4 text-gray-700">Bill of Materials - {params.axisName}</div>
@@ -56,7 +56,7 @@ export const WorkArea = ({
   const params = selectedNode.parameters || {};
   const handleUpdate = (newParams: any) => onUpdateNode(selectedNode.id, newParams);
 
-  // Available Masters: Search through all groups for all axes
+  // Robust Available Masters calculation
   const availableMasters = useMemo(() => {
      const masters: string[] = [];
      const traverse = (nodes: TreeNode[], groupName: string) => {
@@ -64,7 +64,6 @@ export const WorkArea = ({
             if (node.type === 'group') {
                 traverse(node.children || [], node.label);
             } else if (node.type === 'axis') {
-                // Don't include itself as a master
                 if (node.id !== selectedNode.id) {
                     masters.push(`${groupName} > ${node.label}`);
                 }
@@ -75,11 +74,32 @@ export const WorkArea = ({
      return masters;
   }, [data, selectedNode.id]);
 
-  // Profile data helpers
+  // Master profile data retrieval logic
+  const masterProfileData = useMemo(() => {
+    if (!params.masterAxis || params.masterAxis === 'Virtual Master') return null;
+    const axisLabel = String(params.masterAxis).includes('>') ? String(params.masterAxis).split('>')[1].trim() : String(params.masterAxis);
+    
+    const findAxisProfile = (nodes: TreeNode[]): string | null => {
+        for (const node of nodes) {
+            if (node.type === 'axis' && node.label === axisLabel) {
+                return node.parameters?.motionProfileData as string || null;
+            }
+            if (node.children) {
+                const found = findAxisProfile(node.children);
+                if (found) return found;
+            }
+        }
+        return null;
+    };
+    return findAxisProfile(data);
+  }, [data, params.masterAxis]);
+
   const profileType = params.profileType || 'Time Based';
   const masterAxisFullName = String(params.masterAxis || 'Virtual Master');
   const masterAxisName = masterAxisFullName.includes('>') ? masterAxisFullName.split('>')[1].trim() : masterAxisFullName;
-  const gearRatio = (parseFloat(String(params.gearRatioDen)) !== 0) ? parseFloat(String(params.gearRatioNum)) / parseFloat(String(params.gearRatioDen)) : 1;
+  const gearRatioNum = parseFloat(String(params.gearRatioNum)) || 1;
+  const gearRatioDen = parseFloat(String(params.gearRatioDen)) || 1;
+  const gearRatio = gearRatioDen !== 0 ? gearRatioNum / gearRatioDen : 1;
   const cycleTime = parseFloat(String(rootNode?.parameters?.cycleTime)) || 10;
 
   if (selectedNode.type === 'axis') {
@@ -106,6 +126,7 @@ export const WorkArea = ({
                        gearRatio={gearRatio}
                        cycleTime={cycleTime}
                        savedProfileData={params.motionProfileData ? String(params.motionProfileData) : null}
+                       masterProfileData={masterProfileData}
                        onProfileChange={(json) => handleUpdate({ motionProfileData: json })}
                      />
                   </div>
