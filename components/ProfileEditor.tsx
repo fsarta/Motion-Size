@@ -315,7 +315,7 @@ export const ProfileEditor = ({
                             <th className="p-2 border-b w-8">#</th>
                             <th className="p-2 border-b">Law</th>
                             <th className="p-2 border-b">Time (s)</th>
-                            <th className="p-2 border-b">Dist ({posUnitType === 'angle' ? 'deg' : 'mm'})</th>
+                            <th className="p-2 border-b">Position ({posUnitType === 'angle' ? 'deg' : 'mm'})</th>
                             {!isReadOnly && <th className="p-2 border-b w-8"></th>}
                         </tr>
                     </thead>
@@ -359,11 +359,11 @@ export const ProfileEditor = ({
                                 onChange={e => updateSegment(selectedSeg.id, 'type', e.target.value as SegmentType)} />
                         </InputGroup>
                         <div className="h-2"></div>
-                        <InputGroup label="Rel. Duration (s)">
+                        <InputGroup label="Duration (s)">
                             <LockButton disabled={isReadOnly} locked={selectedSeg.calcTarget === 'duration'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'duration')} />
                             <UnitInput type="time" value={selectedSeg.duration} onChange={(val) => updateSegment(selectedSeg.id, 'duration', parseFloat(val))} readOnly={isReadOnly} />
                         </InputGroup>
-                        <InputGroup label={`Rel. Distance (${posUnitType === 'angle' ? 'deg' : 'mm'})`}>
+                        <InputGroup label={`Distance (${posUnitType === 'angle' ? 'deg' : 'mm'})`}>
                             <LockButton disabled={isReadOnly} locked={selectedSeg.calcTarget === 'distance'} onClick={() => updateSegment(selectedSeg.id, 'calcTarget', 'distance')} />
                             <UnitInput type={posUnitType} value={selectedSeg.distance} onChange={(val) => updateSegment(selectedSeg.id, 'distance', parseFloat(val))} readOnly={isReadOnly} />
                         </InputGroup>
