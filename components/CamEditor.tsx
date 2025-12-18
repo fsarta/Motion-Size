@@ -159,6 +159,13 @@ export const CamEditor = ({
         onChange({ ...camTable, sectors: newSectors });
     };
 
+    const handleMasterRangeChange = (val: string) => {
+        const num = parseFloat(val);
+        if (!isNaN(num) && num > 0) {
+            onChange({ ...camTable, masterRange: num });
+        }
+    };
+
     const addSector = () => {
         const last = sortedSectors[sortedSectors.length - 1];
         const newStartM = last ? last.masterEnd : 0;
@@ -310,7 +317,12 @@ export const CamEditor = ({
                      <div className="h-4 w-px bg-gray-300"></div>
                      <div className="flex space-x-1 text-xs">
                          <span className="text-gray-500">Master Cycle:</span>
-                         <input className="w-12 border border-gray-300 text-center" value={camTable.masterRange} readOnly />
+                         <input 
+                            className="w-16 border border-gray-300 text-center focus:border-blue-500 focus:outline-none" 
+                            type="number"
+                            value={camTable.masterRange} 
+                            onChange={(e) => handleMasterRangeChange(e.target.value)} 
+                         />
                          <span className="text-gray-500">deg</span>
                      </div>
                 </div>
