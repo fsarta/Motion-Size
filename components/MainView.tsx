@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, Database, Gauge, Activity } from 'lucide-react';
 import { TreeNode, CamTable } from '../types';
 import { ProfileEditor } from './ProfileEditor';
@@ -25,6 +25,11 @@ export const WorkArea = ({
   camTables: CamTable[]
 }) => {
   const [activeTab, setActiveTab] = useState('Data');
+
+  // Reset tab when switching between different nodes to avoid state carry-over
+  useEffect(() => {
+    setActiveTab('Data');
+  }, [selectedNode?.id]);
 
   // Safe check
   if (!selectedNode) {
@@ -135,7 +140,7 @@ export const WorkArea = ({
   }, [data, masterAxisFullName, masterAxisName]);
 
   const getTitle = () => {
-    if (selectedNode.type === 'mechanism') return `Mechanism & Motion Profile: ${selectedNode.label}`;
+    if (selectedNode.type === 'mechanism') return `Mechanism Configuration: ${selectedNode.label}`;
     if (selectedNode.type === 'gearbox') return `Gearbox: ${selectedNode.label}`;
     if (selectedNode.type === 'motor_drive') return `Drive & Motor: ${selectedNode.label}`;
     return selectedNode.label;
@@ -143,11 +148,10 @@ export const WorkArea = ({
 
   // RENDER LOGIC
   
-  // 1. AXIS PAGE: Only Data
+  // 1. AXIS PAGE: Only Data (No Visualizer)
   if (selectedNode.type === 'axis') {
     return (
       <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
-        <Visualizer axes={axes} />
         <div className="flex-1 bg-win-bg p-2 overflow-y-auto flex flex-col min-h-0">
           <div className="text-xs font-bold text-gray-700 mb-2 border-b border-gray-300 pb-1 shrink-0 flex justify-between items-center">
             <span>{selectedNode.label} Configuration</span>
@@ -161,7 +165,7 @@ export const WorkArea = ({
     );
   }
 
-  // 2. MECHANISM PAGE: Choice + Profile
+  // 2. MECHANISM PAGE: Tabbed view (Data / Motion Profile)
   if (selectedNode.type === 'mechanism') {
     return (
       <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
@@ -171,28 +175,42 @@ export const WorkArea = ({
             <span className="text-[10px] font-normal text-gray-500 italic">Sync mode inherited from parent {parentAxis?.label}</span>
           </div>
           
-          <div className="flex-1 flex flex-col space-y-2 overflow-hidden">
-            {/* Top: Mechanism Parameters */}
-            <div className="bg-white p-4 border border-gray-200 rounded shadow-sm shrink-0">
-               <MechanismForm params={params} onUpdate={handleNodeUpdate} />
-            </div>
-            
-            {/* Bottom: Motion Profile Editor */}
-            <div className="flex-1 bg-white border border-gray-200 rounded shadow-sm overflow-hidden flex flex-col min-h-0">
-               <div className="bg-gray-50 px-3 py-1.5 border-b border-gray-200 text-xs font-bold text-gray-600 flex items-center">
-                  Motion Profile Specification
-               </div>
-               <div className="flex-1 overflow-hidden">
-                 <ProfileEditor 
-                    profileType={profileType as any} 
-                    masterAxisName={masterAxisName}
-                    gearRatio={gearRatio}
-                    cycleTime={cycleTime}
-                    savedProfileData={params.motionProfileData ? String(params.motionProfileData) : null}
-                    masterProfileData={masterProfileData}
-                    onProfileChange={(json) => handleNodeUpdate({ motionProfileData: json })}
-                  />
-               </div>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <FormTabs 
+              tabs={['Data', 'Motion Profile', 'Notes']} 
+              activeTab={activeTab} 
+              onTabClick={setActiveTab} 
+            />
+
+            <div className="flex-1 overflow-hidden">
+               {activeTab === 'Data' && (
+                  <div className="h-full bg-white p-4 border border-gray-200 rounded shadow-sm overflow-y-auto">
+                    <MechanismForm params={params} onUpdate={handleNodeUpdate} />
+                  </div>
+               )}
+               
+               {activeTab === 'Motion Profile' && (
+                  <div className="h-full bg-white border border-gray-200 rounded shadow-sm overflow-hidden flex flex-col">
+                    <ProfileEditor 
+                       profileType={profileType as any} 
+                       masterAxisName={masterAxisName}
+                       gearRatio={gearRatio}
+                       cycleTime={cycleTime}
+                       savedProfileData={params.motionProfileData ? String(params.motionProfileData) : null}
+                       masterProfileData={masterProfileData}
+                       onProfileChange={(json) => handleNodeUpdate({ motionProfileData: json })}
+                     />
+                  </div>
+               )}
+
+               {activeTab === 'Notes' && (
+                  <div className="h-full bg-white p-4 border border-gray-200 rounded shadow-sm">
+                    <textarea 
+                      className="w-full h-full p-2 text-xs border border-gray-200 focus:outline-none focus:border-blue-500 resize-none"
+                      placeholder="Add technical notes for this mechanism..."
+                    />
+                  </div>
+               )}
             </div>
           </div>
         </div>
@@ -200,7 +218,7 @@ export const WorkArea = ({
     );
   }
 
-  // 3. OTHER PAGES (Gearbox, Motor, Group): Keep tabs for consistency
+  // 3. OTHER PAGES (Gearbox, Motor, Group)
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
       {selectedNode.type === 'group' && <Visualizer axes={axes} />}
@@ -222,12 +240,12 @@ export const WorkArea = ({
 
         <FormTabs 
           tabs={['Data', 'Environment', 'Notes']} 
-          activeTab={activeTab === 'Motion Profile' ? 'Data' : activeTab} 
+          activeTab={activeTab} 
           onTabClick={setActiveTab} 
         />
 
         <div className="flex-1 overflow-y-auto pr-2">
-          {activeTab === 'Data' || activeTab === 'Motion Profile' ? (
+          {activeTab === 'Data' ? (
             <div className="bg-white p-4 border border-gray-200 rounded shadow-sm">
                 {selectedNode.type === 'group' ? <PowerGroupForm params={params} onUpdate={handleNodeUpdate} /> :
                  selectedNode.type === 'gearbox' ? <GearboxForm params={params} onUpdate={handleNodeUpdate} /> :
@@ -235,8 +253,8 @@ export const WorkArea = ({
                  <div className="text-gray-400 italic">Configuration view</div>}
             </div>
           ) : (
-            <div className="h-full flex items-center justify-center text-gray-400 text-xs italic border border-gray-200 border-dashed rounded bg-gray-50">
-              {activeTab} view not implemented in this demo.
+            <div className="h-full flex items-center justify-center text-gray-400 text-xs italic border border-gray-200 border-dashed rounded bg-gray-50 p-12">
+              {activeTab} view for this component is not implemented in this demo.
             </div>
           )}
         </div>
