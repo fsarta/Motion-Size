@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { UnitType } from '../../utils/unitConversion';
 import { UnitInput, InputGroup, Select, SectionHeader } from '../Common';
@@ -36,15 +37,6 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
         { key: 'screwInertia', label: 'Ball Screw Inertia', unitType: 'inertia', hasCalculator: true },
         { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
       ]
-    },
-    {
-      section: 'Related Transmission',
-      fields: [
-        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
-        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
-        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
-        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
     }
   ],
   'Belt': [
@@ -66,45 +58,6 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
         { key: 'driverInertia', label: 'Driver/Idler Inertia', unitType: 'inertia', hasCalculator: true },
         { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
       ]
-    },
-    {
-      section: 'Related Transmission',
-      fields: [
-        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
-        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
-        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
-        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
-    }
-  ],
-  'Chain and Sprocket': [
-    {
-      section: 'Regarding Load',
-      fields: [
-        { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
-        { key: 'externalForce', label: 'External Force', unitType: 'force' },
-        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
-        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
-        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
-      ]
-    },
-    {
-      section: 'Regarding Mechanism',
-      fields: [
-        { key: 'sprocketPCD', label: 'Sprocket PCD', unitType: 'length' },
-        { key: 'chainMass', label: 'Chain Mass', unitType: 'mass' },
-        { key: 'sprocketInertia', label: 'Sprocket/Idler Inertia', unitType: 'inertia', hasCalculator: true },
-        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
-    },
-    {
-      section: 'Related Transmission',
-      fields: [
-        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
-        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
-        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
-        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
     }
   ],
   'Rack and Pinion': [
@@ -125,45 +78,6 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
         { key: 'rackMass', label: 'Rack Mass', unitType: 'mass' },
         { key: 'pinionInertia', label: 'Pinion Inertia', unitType: 'inertia', hasCalculator: true },
         { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
-    },
-    {
-      section: 'Related Transmission',
-      fields: [
-        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
-        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
-        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
-        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
-    }
-  ],
-  'Roll Feeder': [
-    {
-      section: 'Regarding Load',
-      fields: [
-        { key: 'pressForce', label: 'Press Force', unitType: 'force' },
-        { key: 'tensionForce', label: 'Tension Force', unitType: 'force' },
-        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
-        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
-        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
-      ]
-    },
-    {
-      section: 'Regarding Mechanism',
-      fields: [
-        { key: 'drivingRollerDiameter', label: 'Driving Roller Dia.', unitType: 'length' },
-        { key: 'drivingInertia', label: 'Driving Inertia', unitType: 'inertia', hasCalculator: true },
-        { key: 'drivenInertia', label: 'Driven Inertia', unitType: 'inertia', hasCalculator: true },
-        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
-    },
-    {
-      section: 'Related Transmission',
-      fields: [
-        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
-        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
-        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
-        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
       ]
     }
   ],
@@ -195,52 +109,13 @@ const MECHANISM_CONFIG: Record<string, MechanismSection[]> = {
         { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
         { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
       ]
-    },
-    {
-      section: 'Related Transmission',
-      fields: [
-        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
-        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
-        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
-        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
-    }
-  ],
-  'Crank': [
-    {
-      section: 'Regarding Load',
-      fields: [
-        { key: 'massLoad', label: 'Load Mass', unitType: 'mass' },
-        { key: 'externalForce', label: 'External Force', unitType: 'force' },
-        { key: 'frictionCoeff', label: 'Friction Coeff.', unitType: 'factor', hasCalculator: true },
-        { key: 'frictionForce', label: 'Friction Force', unitType: 'force' },
-        { key: 'inclineAngle', label: 'Inclination', unitType: 'angle' },
-      ]
-    },
-    {
-      section: 'Regarding Mechanism',
-      fields: [
-        { key: 'crankRadius', label: 'Crank Radius', unitType: 'length' },
-        { key: 'rodLength', label: 'Connecting Rod Length', unitType: 'length' },
-        { key: 'crankInertia', label: 'Crank Inertia', unitType: 'inertia', hasCalculator: true },
-        { key: 'mechanismEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
-    },
-    {
-      section: 'Related Transmission',
-      fields: [
-        { key: 'gearRatio', label: 'Gear Ratio', unitType: 'ratio' },
-        { key: 'transmissionInertia', label: 'Reflected Inertia', unitType: 'inertia' },
-        { key: 'additionalTorque', label: 'Additional Torque', unitType: 'torque' },
-        { key: 'transmissionEfficiency', label: 'Efficiency', unitType: 'efficiency' },
-      ]
     }
   ]
 };
 
 export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
   const mechType = params.mechanismType || 'Ball Screw';
-  const sections = MECHANISM_CONFIG[mechType] || [];
+  const sections = MECHANISM_CONFIG[mechType] || MECHANISM_CONFIG['Ball Screw'];
   const [calculatorField, setCalculatorField] = useState<string | null>(null);
 
   const handleChange = (key: string, value: any) => {
@@ -275,22 +150,19 @@ export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p:
   };
 
   const renderSection = (sectionData: MechanismSection) => (
-    <div key={sectionData.section} className="mb-4">
+    <div key={sectionData.section} className="mb-0">
       <SectionHeader title={sectionData.section} />
-      {sectionData.fields.map(renderField)}
+      <div className="grid grid-cols-2 gap-x-8">
+        {sectionData.fields.map(renderField)}
+      </div>
     </div>
   );
 
-  const loadSection = sections.find(s => s.section === 'Regarding Load');
-  const otherSections = sections.filter(s => s.section !== 'Regarding Load');
-
-  // Determine which calculator to show based on the field name
   const isFriction = calculatorField === 'frictionCoeff';
   const isInertia = calculatorField && calculatorField.toLowerCase().includes('inertia');
 
   return (
     <div className="relative">
-      {/* Inertia Calculator Modal */}
       <InertiaCalculatorModal 
         isOpen={!!calculatorField && !!isInertia} 
         onClose={() => setCalculatorField(null)} 
@@ -299,7 +171,6 @@ export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p:
         initialValue={calculatorField ? params[calculatorField] : '0'}
       />
 
-      {/* Friction Calculator Modal */}
       <FrictionCalculatorModal
         isOpen={!!calculatorField && !!isFriction}
         onClose={() => setCalculatorField(null)}
@@ -308,27 +179,20 @@ export const MechanismForm = ({ params, onUpdate }: { params: any, onUpdate: (p:
         initialValue={calculatorField ? params[calculatorField] : '0'}
       />
 
-      <div className="grid grid-cols-2 gap-8">
-        <div>
-          <InputGroup label="Mechanism Type">
-            <Select 
-              value={mechType} 
-              options={Object.keys(MECHANISM_CONFIG)} 
-              onChange={(e) => handleChange('mechanismType', e.target.value)} 
-            />
-          </InputGroup>
-          {loadSection && renderSection(loadSection)}
+      <div className="flex flex-col">
+        <div className="flex items-center mb-2 border-b border-gray-100 pb-2">
+            <div className="text-xs font-bold text-gray-500 mr-4">MECH. TYPE:</div>
+            <div className="w-64">
+                <Select 
+                value={mechType} 
+                options={Object.keys(MECHANISM_CONFIG)} 
+                onChange={(e) => handleChange('mechanismType', e.target.value)} 
+                />
+            </div>
         </div>
-        <div>
-          <div className="h-[26px] mb-1.5"></div> 
-          {otherSections.map(renderSection)}
+        <div className="space-y-1">
+            {sections.map(renderSection)}
         </div>
-      </div>
-      <div className="mt-4 p-2 border border-gray-300 bg-white">
-          <div className="text-xs font-bold text-gray-500 mb-2">Thrust / Velocity Profile</div>
-          <div className="h-32 bg-gray-50 flex items-center justify-center border border-gray-200 border-dashed text-gray-400 text-xs">
-             Preview Available in Profile Tab
-          </div>
       </div>
     </div>
   );

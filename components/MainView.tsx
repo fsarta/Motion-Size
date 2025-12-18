@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo } from 'react';
-import { Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, Database, Gauge } from 'lucide-react';
+import { Play, Settings2, ArrowRightLeft, ChevronsUp, BarChart3, Database, Gauge, Activity } from 'lucide-react';
 import { TreeNode, CamTable } from '../types';
 import { ProfileEditor } from './ProfileEditor';
 import { FormTabs } from './Common';
@@ -23,6 +24,8 @@ export const WorkArea = ({
   onUpdateNode: (id: string, params: any) => void,
   camTables: CamTable[]
 }) => {
+  const [activeTab, setActiveTab] = useState('Data');
+
   // Safe check
   if (!selectedNode) {
       return (
@@ -32,22 +35,38 @@ export const WorkArea = ({
       );
   }
 
-  // Find the active group based on selection
+  // Find the parent axis if the current node is a component (mechanism, gearbox, etc)
+  const findParentAxis = (nodes: TreeNode[], targetId: string): TreeNode | null => {
+    for (const node of nodes) {
+      if (node.children) {
+        if (node.children.some(c => c.id === targetId)) {
+          return node.type === 'axis' ? node : findParentAxis(data, node.id);
+        }
+        const found = findParentAxis(node.children, targetId);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const parentAxis = useMemo(() => {
+    if (selectedNode.type === 'axis') return selectedNode;
+    return findParentAxis(data, selectedNode.id);
+  }, [data, selectedNode]);
+
+  // Find the active group based on selection for visualizer
   const rootNode = data.find(n => n.id === 'root');
-  
   let activeGroup = rootNode;
   if (selectedNode) {
      const findGroup = (nodes: TreeNode[]): TreeNode | null => {
         for(const node of nodes) {
            if (node.type === 'group') {
-              if (node.id === selectedNode.id) return node;
-              // check descendants
               const hasNode = (p: TreeNode, target: string): boolean => {
                  if (p.id === target) return true;
                  if (p.children) return p.children.some(c => hasNode(c, target));
                  return false;
               }
-              if (node.children && node.children.some(c => hasNode(c, selectedNode.id))) return node;
+              if (node.id === selectedNode.id || (node.children && node.children.some(c => hasNode(c, selectedNode.id)))) return node;
            }
         }
         return null;
@@ -55,10 +74,9 @@ export const WorkArea = ({
      const found = findGroup(data);
      if (found) activeGroup = found;
   }
-
   const axes = activeGroup?.children?.filter(n => n.icon === 'axis') || [];
-  
-  // -- Calculate Available Masters --
+
+  // Available Masters
   const availableMasters = useMemo(() => {
      const masters: string[] = [];
      const traverse = (nodes: TreeNode[], groupName: string) => {
@@ -66,7 +84,7 @@ export const WorkArea = ({
             if (node.type === 'group') {
                traverse(node.children || [], node.label);
             } else if (node.type === 'axis') {
-               if (node.id !== selectedNode.id) {
+               if (node.id !== (parentAxis?.id || selectedNode.id)) {
                    masters.push(`${groupName} > ${node.label}`);
                }
             }
@@ -74,68 +92,38 @@ export const WorkArea = ({
      };
      traverse(data, "");
      return masters;
-  }, [data, selectedNode.id]);
-
-  
-  const [activeTab, setActiveTab] = useState('Data');
+  }, [data, selectedNode.id, parentAxis?.id]);
 
   const params = selectedNode.parameters || {};
-
-  // Wrapper for child components to update the specific node
   const handleNodeUpdate = (newParams: any) => {
     onUpdateNode(selectedNode.id, newParams);
   };
 
-  const renderFormContent = () => {
-    switch (selectedNode.type) {
-      case 'group': return <React.Fragment key={selectedNode.id}><PowerGroupForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
-      case 'mechanism': return <React.Fragment key={selectedNode.id}><MechanismForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
-      case 'gearbox': return <React.Fragment key={selectedNode.id}><GearboxForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
-      case 'motor_drive': return <React.Fragment key={selectedNode.id}><MotorDriveForm params={params} onUpdate={handleNodeUpdate} /></React.Fragment>;
-      case 'axis': return <React.Fragment key={selectedNode.id}><AxisForm params={params} onUpdate={handleNodeUpdate} availableMasters={availableMasters} camTables={camTables} /></React.Fragment>;
-      default: return <div className="text-gray-400 italic p-4">Select an item to configure</div>;
-    }
-  };
-
-  const getTitle = () => {
-    if (!selectedNode) return 'Configuration';
-    if (selectedNode.type === 'mechanism') return `Mechanism: ${selectedNode.label}`;
-    if (selectedNode.type === 'gearbox') return `Gearbox: ${selectedNode.label}`;
-    if (selectedNode.type === 'motor_drive') return `Drive & Motor: ${selectedNode.label}`;
-    return selectedNode.label;
-  };
-
-  const profileType = params.profileType || 'Time Based';
-  
-  // Extract Gearing Info
-  const masterAxisFullName = String(params.masterAxis || 'Virtual Master');
+  // Helper values for Profile Editor
+  const axisParams = parentAxis?.parameters || {};
+  const profileType = axisParams.profileType || 'Time Based';
+  const masterAxisFullName = String(axisParams.masterAxis || 'Virtual Master');
   const masterAxisName = masterAxisFullName.includes('>') ? masterAxisFullName.split('>')[1].trim() : masterAxisFullName;
-  
-  const gearNum = parseFloat(String(params.gearRatioNum || '1'));
-  const gearDen = parseFloat(String(params.gearRatioDen || '1'));
+  const gearNum = parseFloat(String(axisParams.gearRatioNum || '1'));
+  const gearDen = parseFloat(String(axisParams.gearRatioDen || '1'));
   const gearRatio = (gearDen !== 0 && !isNaN(gearDen) && !isNaN(gearNum)) ? gearNum / gearDen : 1;
   
-  // Extract Global Cycle Time from Root Node safely
   let cycleTime = 10;
-  if (rootNode && rootNode.parameters && rootNode.parameters.cycleTime) {
+  if (rootNode?.parameters?.cycleTime) {
       const val = parseFloat(String(rootNode.parameters.cycleTime));
       if (!isNaN(val) && val > 0) cycleTime = val;
   }
 
-  // --- Find Master Node Data ---
-  // To simulate the Slave correctly, we need the Master's Motion Profile segments.
   const masterProfileData = useMemo(() => {
      if (masterAxisFullName === 'Virtual Master') return null;
-     
-     // Scan tree to find the node with label == masterAxisName
-     // Simple search (assuming unique names or taking first match)
      let foundData: string | null = null;
-     
      const search = (nodes: TreeNode[]) => {
         for (const node of nodes) {
            if (node.type === 'axis' && node.label === masterAxisName) {
-               if (node.parameters && node.parameters.motionProfileData) {
-                   foundData = String(node.parameters.motionProfileData);
+               // Profile is now on the mechanism child of the axis
+               const mechanismChild = node.children?.find(c => c.type === 'mechanism');
+               if (mechanismChild?.parameters?.motionProfileData) {
+                   foundData = String(mechanismChild.parameters.motionProfileData);
                }
                return;
            }
@@ -146,6 +134,73 @@ export const WorkArea = ({
      return foundData;
   }, [data, masterAxisFullName, masterAxisName]);
 
+  const getTitle = () => {
+    if (selectedNode.type === 'mechanism') return `Mechanism & Motion Profile: ${selectedNode.label}`;
+    if (selectedNode.type === 'gearbox') return `Gearbox: ${selectedNode.label}`;
+    if (selectedNode.type === 'motor_drive') return `Drive & Motor: ${selectedNode.label}`;
+    return selectedNode.label;
+  };
+
+  // RENDER LOGIC
+  
+  // 1. AXIS PAGE: Only Data
+  if (selectedNode.type === 'axis') {
+    return (
+      <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
+        <Visualizer axes={axes} />
+        <div className="flex-1 bg-win-bg p-2 overflow-y-auto flex flex-col min-h-0">
+          <div className="text-xs font-bold text-gray-700 mb-2 border-b border-gray-300 pb-1 shrink-0 flex justify-between items-center">
+            <span>{selectedNode.label} Configuration</span>
+            <span className="flex items-center text-[10px] font-normal text-gray-500"><Gauge size={10} className="mr-1"/> Status: OK</span>
+          </div>
+          <div className="flex-1 bg-white p-4 border border-gray-200 rounded shadow-sm overflow-y-auto">
+             <AxisForm params={params} onUpdate={handleNodeUpdate} availableMasters={availableMasters} camTables={camTables} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. MECHANISM PAGE: Choice + Profile
+  if (selectedNode.type === 'mechanism') {
+    return (
+      <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
+        <div className="flex-1 bg-win-bg p-2 flex flex-col min-h-0 overflow-hidden">
+          <div className="text-xs font-bold text-gray-700 mb-2 border-b border-gray-300 pb-1 shrink-0 flex justify-between items-center">
+            <span className="flex items-center"><Activity size={14} className="mr-2 text-blue-600"/>{getTitle()}</span>
+            <span className="text-[10px] font-normal text-gray-500 italic">Sync mode inherited from parent {parentAxis?.label}</span>
+          </div>
+          
+          <div className="flex-1 flex flex-col space-y-2 overflow-hidden">
+            {/* Top: Mechanism Parameters */}
+            <div className="bg-white p-4 border border-gray-200 rounded shadow-sm shrink-0">
+               <MechanismForm params={params} onUpdate={handleNodeUpdate} />
+            </div>
+            
+            {/* Bottom: Motion Profile Editor */}
+            <div className="flex-1 bg-white border border-gray-200 rounded shadow-sm overflow-hidden flex flex-col min-h-0">
+               <div className="bg-gray-50 px-3 py-1.5 border-b border-gray-200 text-xs font-bold text-gray-600 flex items-center">
+                  Motion Profile Specification
+               </div>
+               <div className="flex-1 overflow-hidden">
+                 <ProfileEditor 
+                    profileType={profileType as any} 
+                    masterAxisName={masterAxisName}
+                    gearRatio={gearRatio}
+                    cycleTime={cycleTime}
+                    savedProfileData={params.motionProfileData ? String(params.motionProfileData) : null}
+                    masterProfileData={masterProfileData}
+                    onProfileChange={(json) => handleNodeUpdate({ motionProfileData: json })}
+                  />
+               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. OTHER PAGES (Gearbox, Motor, Group): Keep tabs for consistency
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden">
       {selectedNode.type === 'group' && <Visualizer axes={axes} />}
@@ -163,31 +218,21 @@ export const WorkArea = ({
 
         <div className="text-xs font-bold text-gray-700 mb-2 border-b border-gray-300 pb-1 shrink-0 flex justify-between items-center">
           <span>{getTitle()}</span>
-          <div className="flex space-x-2 text-[10px] font-normal text-gray-500">
-             <span className="flex items-center"><Gauge size={10} className="mr-1"/> Status: OK</span>
-          </div>
         </div>
 
         <FormTabs 
-          tabs={['Data', 'Motion Profile', 'Environment', 'Notes']} 
-          activeTab={activeTab} 
+          tabs={['Data', 'Environment', 'Notes']} 
+          activeTab={activeTab === 'Motion Profile' ? 'Data' : activeTab} 
           onTabClick={setActiveTab} 
         />
 
         <div className="flex-1 overflow-y-auto pr-2">
-          {activeTab === 'Data' ? (
-            renderFormContent()
-          ) : activeTab === 'Motion Profile' ? (
-            <div className="h-full flex flex-col">
-              <ProfileEditor 
-                profileType={profileType as any} 
-                masterAxisName={masterAxisName}
-                gearRatio={gearRatio}
-                cycleTime={cycleTime}
-                savedProfileData={params.motionProfileData ? String(params.motionProfileData) : null}
-                masterProfileData={masterProfileData}
-                onProfileChange={(json) => handleNodeUpdate({ motionProfileData: json })}
-              />
+          {activeTab === 'Data' || activeTab === 'Motion Profile' ? (
+            <div className="bg-white p-4 border border-gray-200 rounded shadow-sm">
+                {selectedNode.type === 'group' ? <PowerGroupForm params={params} onUpdate={handleNodeUpdate} /> :
+                 selectedNode.type === 'gearbox' ? <GearboxForm params={params} onUpdate={handleNodeUpdate} /> :
+                 selectedNode.type === 'motor_drive' ? <MotorDriveForm params={params} onUpdate={handleNodeUpdate} /> :
+                 <div className="text-gray-400 italic">Configuration view</div>}
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-gray-400 text-xs italic border border-gray-200 border-dashed rounded bg-gray-50">
