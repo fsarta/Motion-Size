@@ -186,8 +186,15 @@ export const CamEditor = ({
 
     const handleRequestSave = () => {
         const lastSector = sortedSectors[sortedSectors.length - 1];
-        if (lastSector.masterEnd < camTable.masterRange) {
-            setValidationError(`Validation Error: The profile must cover the entire Master Cycle. Current profile ends at ${lastSector.masterEnd} but cycle is ${camTable.masterRange}.`);
+        const diff = lastSector.masterEnd - camTable.masterRange;
+
+        // Check if last sector matches masterRange EXACTLY (within epsilon)
+        if (Math.abs(diff) > 0.001) {
+            if (diff < 0) {
+                setValidationError(`Validation Error: The profile is incomplete. Current profile ends at ${lastSector.masterEnd} but the cycle is ${camTable.masterRange}.`);
+            } else {
+                setValidationError(`Validation Error: The profile exceeds the Master Cycle. Current profile ends at ${lastSector.masterEnd} but the cycle is ${camTable.masterRange}. Please adjust the sectors.`);
+            }
             return;
         }
         setIsSaveConfirmOpen(true);
@@ -294,7 +301,7 @@ export const CamEditor = ({
                 message={
                     <div className="flex flex-col items-center">
                         <AlertCircle size={24} className="text-red-500 mb-2"/>
-                        <p>{validationError}</p>
+                        <p className="text-gray-700">{validationError}</p>
                     </div>
                 }
                 variant="danger"
