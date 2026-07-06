@@ -51,7 +51,58 @@ export const WorkArea = ({
     setActiveTab('System Data');
   }, [selectedNode?.id]);
 
-  if (!selectedNode) return <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Select a project node.</div>;
+  const { totalAxes, incompleteAxes, completeAxes } = useMemo(() => {
+    let total = 0;
+    let incomplete = 0;
+    const traverse = (nodes: TreeNode[]) => {
+      nodes.forEach(node => {
+        if (node.type === 'axis') {
+          total++;
+          const params = node.parameters || {};
+          if (!params.motorModel || !params.driveModel) {
+            incomplete++;
+          }
+        }
+        if (node.children) {
+          traverse(node.children);
+        }
+      });
+    };
+    traverse(data);
+    return { totalAxes: total, incompleteAxes: incomplete, completeAxes: total - incomplete };
+  }, [data]);
+
+  const statusBar = (
+    <div className="h-8 bg-slate-50 border-b border-gray-200 flex items-center px-4 text-xs shrink-0 z-20 justify-between">
+      <div className="flex items-center text-gray-700 font-medium">
+        <Activity size={14} className="mr-2 text-blue-600" />
+        System Health Summary
+      </div>
+      <div className="flex space-x-4">
+        <div className="flex items-center">
+          <span className="text-gray-500 mr-1">Total Axes:</span>
+          <span className="font-semibold">{totalAxes}</span>
+        </div>
+        <div className="flex items-center">
+          <span className="text-gray-500 mr-1">Fully Sized:</span>
+          <span className="font-semibold text-green-600">{completeAxes}</span>
+        </div>
+        <div className="flex items-center">
+          <span className="text-gray-500 mr-1">Incomplete:</span>
+          <span className={`font-semibold ${incompleteAxes > 0 ? 'text-amber-500' : 'text-gray-600'}`}>
+            {incompleteAxes}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (!selectedNode) return (
+    <div className="flex-1 flex flex-col h-full bg-win-bg overflow-hidden">
+      {statusBar}
+      <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Select a project node.</div>
+    </div>
+  );
 
   const params = selectedNode.parameters || {};
   const handleUpdate = (newParams: any) => onUpdateNode(selectedNode.id, newParams);
@@ -108,6 +159,7 @@ export const WorkArea = ({
     
     return (
       <div className="flex-1 flex flex-col h-full bg-win-bg overflow-hidden">
+        {statusBar}
         <div className="h-10 bg-white border-b border-win-border flex items-center px-4 shrink-0 shadow-sm z-10">
            <Activity size={16} className="text-win-blue mr-2"/>
            <span className="text-sm font-bold text-gray-700">{selectedNode.label} Configuration</span>
@@ -146,6 +198,7 @@ export const WorkArea = ({
 
   return (
     <div className="flex-1 flex flex-col h-full bg-win-bg overflow-hidden">
+      {statusBar}
       <Visualizer axes={selectedNode.children || []} />
       <div className="flex-1 p-4 overflow-y-auto">
         <PowerGroupForm params={params} onUpdate={handleUpdate} />
