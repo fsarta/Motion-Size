@@ -1,5 +1,6 @@
 {
   "name": "Motion Size",
   "description": "A high-fidelity React implementation of a servo sizing software interface featuring a ribbon toolbar, hierarchical tree view, system visualization, and configuration wizard.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }

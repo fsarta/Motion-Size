@@ -91,7 +91,13 @@ const TreeItem: React.FC<TreeItemProps> = ({ node, level, onToggle, onSelect, se
           )}
         </div>
         <div className="mr-1.5">{getIcon(node.icon)}</div>
-        <span className="truncate">{node.label}</span>
+        <span className="truncate flex-1">{node.label}</span>
+        {node.type === 'axis' && (
+          <div 
+            className={`w-2 h-2 rounded-full mr-2 flex-shrink-0 ${node.parameters?.motorModel ? 'bg-green-500' : 'bg-amber-400'}`}
+            title={node.parameters?.motorModel ? 'Motor configured' : 'Requires motor selection'}
+          />
+        )}
       </div>
       {node.expanded && node.children && (
         <div>
