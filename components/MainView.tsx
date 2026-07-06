@@ -138,7 +138,8 @@ export const WorkArea = () => {
     const findAxisProfile = (nodes: TreeNode[]): string | null => {
         for (const node of nodes) {
             if (node.type === 'axis' && node.label === axisLabel) {
-                return node.parameters?.motionProfileData as string || null;
+                const mp = node.parameters?.motionProfileData as string;
+                return (mp && mp !== 'undefined') ? mp : null;
             }
             if (node.children) {
                 const found = findAxisProfile(node.children);
@@ -186,7 +187,7 @@ export const WorkArea = () => {
                        gearRatio={gearRatio}
                        posUnitType={posUnitType}
                        isReadOnly={isReadOnly}
-                       savedProfileData={params.motionProfileData ? String(params.motionProfileData) : null}
+                       savedProfileData={(params.motionProfileData && String(params.motionProfileData) !== 'undefined') ? String(params.motionProfileData) : null}
                        masterProfileData={masterProfileData}
                        onProfileChange={(json) => handleUpdate({ motionProfileData: json })}
                      />

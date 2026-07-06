@@ -10,7 +10,7 @@ export const simulateMotion = (
   const points: TimePoint[] = [];
   const dt = 0.005; 
 
-  if ((profileType === 'Master/Follower' || profileType === 'Camming') && masterProfileData) {
+  if ((profileType === 'Master/Follower' || profileType === 'Camming') && masterProfileData && masterProfileData !== 'undefined') {
     try {
       const masterSegments = JSON.parse(masterProfileData) as MotionSegment[];
       const masterPoints = simulateMotion(masterSegments, 0, 'Time Based', 1, null);

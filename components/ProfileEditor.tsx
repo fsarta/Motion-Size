@@ -73,7 +73,7 @@ export const ProfileEditor = ({
   }, []);
 
   useEffect(() => {
-    if (savedProfileData) {
+    if (savedProfileData && savedProfileData !== 'undefined') {
       try {
         const parsed = JSON.parse(savedProfileData);
         if (Array.isArray(parsed) && parsed.length > 0) {
