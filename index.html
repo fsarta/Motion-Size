@@ -9,7 +9,15 @@
           set: (v) => { console.warn("Ignoring window.fetch assignment", v); },
           configurable: true
         });
-      } catch (e) { console.error("Could not redefine fetch", e); }
+        
+        const originalParse = JSON.parse;
+        JSON.parse = function(text, reviver) {
+            if (text === "undefined" || text === undefined) {
+                return null;
+            }
+            return originalParse.apply(this, arguments);
+        };
+      } catch (e) { console.error("Could not redefine fetch/parse", e); }
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

@@ -179,7 +179,8 @@ export const useProjectStore = create<ProjectState>()(
       }
 
       // JSON parse/stringify is safe here to deep clone the clipboard node
-      const newNode = JSON.parse(JSON.stringify(state.clipboard.node));
+      const newNode = state.clipboard.node ? JSON.parse(JSON.stringify(state.clipboard.node)) : null;
+      if (!newNode) return;
       newNode.id = `${newNode.type}_${Date.now()}`;
       if (!state.clipboard.isCut) newNode.label += " (Copy)";
       
@@ -205,7 +206,8 @@ export const useProjectStore = create<ProjectState>()(
       if (!draggedNode) return;
       
       // JSON clone the dragged node to insert it later
-      const nodeToInsert = JSON.parse(JSON.stringify(draggedNode));
+      const nodeToInsert = draggedNode ? JSON.parse(JSON.stringify(draggedNode)) : null;
+      if (!nodeToInsert) return;
 
       // Remove from current pos
       const removeRecursive = (nodes: TreeNode[]) => {
