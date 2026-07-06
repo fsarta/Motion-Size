@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme {
+  --color-win-bg: #f0f0f0;
+  --color-win-panel: #ffffff;
+  --color-win-border: #d1d5db;
+  --color-win-blue: #0078d7;
+  --color-win-hover: #e5f3ff;
+  --color-win-select: #cce8ff;
+  --text-xxs: 0.65rem;
+}

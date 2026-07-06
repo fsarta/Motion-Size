@@ -7,6 +7,8 @@ import { FormTabs } from './Common';
 import { Visualizer } from './Visualizer';
 import { UnitType } from '../utils/unitConversion';
 
+import { useProjectStore } from '../store/useProjectStore';
+
 // Forms
 import { PowerGroupForm } from './forms/PowerGroupForm';
 import { MechanismForm } from './forms/MechanismForm';
@@ -34,18 +36,23 @@ const BOMView = ({ params }: { params: any }) => (
   </div>
 );
 
-export const WorkArea = ({ 
-  data, 
-  selectedNode, 
-  onUpdateNode,
-  camTables
-}: { 
-  data: TreeNode[], 
-  selectedNode: TreeNode | undefined, 
-  onUpdateNode: (id: string, params: any) => void,
-  camTables: CamTable[]
-}) => {
+export const WorkArea = () => {
   const [activeTab, setActiveTab] = useState('System Data');
+  
+  const { data, selectedNodeId, updateNode, camTables } = useProjectStore();
+  
+  const findNode = (nodes: TreeNode[], id: string): TreeNode | null => {
+    for (const node of nodes) {
+      if (node.id === id) return node;
+      if (node.children) {
+        const found = findNode(node.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const selectedNode = findNode(data, selectedNodeId);
 
   useEffect(() => {
     setActiveTab('System Data');
@@ -105,7 +112,7 @@ export const WorkArea = ({
   );
 
   const params = selectedNode.parameters || {};
-  const handleUpdate = (newParams: any) => onUpdateNode(selectedNode.id, newParams);
+  const handleUpdate = (newParams: any) => updateNode(selectedNode.id, newParams);
 
   const availableMasters = useMemo(() => {
      const masters: string[] = [];

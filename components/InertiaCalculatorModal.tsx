@@ -1,26 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { X, HelpCircle, Plus, Trash2 } from 'lucide-react';
 import { UnitInput, InputGroup, Select } from './Common';
-
-interface InertiaComponent {
-  id: string;
-  name: string;
-  type: 'Solid Cylinder' | 'Hollow Cylinder' | 'Cuboid' | 'Solid Sphere' | 'Hollow Sphere' | 'Solid Cone' | 'User Spec.';
-  quantity: number;
-  ratio: number;
-  mass: number; // kg (Base unit)
-  volume: number; // m3 (Base unit)
-  material: string;
-  density: number; // kg/m3
-  // Dimensions (stored in Base Unit: mm)
-  d1: number; // Outer Diameter
-  d2: number; // Inner Diameter
-  h: number; // Height
-  w: number; // Width
-  l: number; // Length (Depth)
-  r_offset: number; // Distance from axis
-  inertia: number; // kg cm^2 (Base unit)
-}
+import { InertiaComponent, MATERIALS, DEFAULT_INERTIA_ROW, calculateInertiaPhysics } from '../utils/physics';
 
 interface InertiaCalculatorModalProps {
   isOpen: boolean;
@@ -30,37 +11,6 @@ interface InertiaCalculatorModalProps {
   title: string;
 }
 
-const MATERIALS = [
-  { name: 'Aluminum', density: 2700 },
-  { name: 'Brass', density: 8500 },
-  { name: 'Hard Wood (Oak)', density: 750 },
-  { name: 'Iron (Cast)', density: 7200 },
-  { name: 'Nylon', density: 1150 },
-  { name: 'POM (Delrin)', density: 1410 },
-  { name: 'Steel (Carbon Tool)', density: 7850 },
-  { name: 'Steel (Stainless)', density: 8000 },
-  { name: 'User Spec.', density: 0 }
-];
-
-const DEFAULT_ROW: InertiaComponent = {
-  id: '1',
-  name: 'NewComponent',
-  type: 'Solid Cylinder',
-  quantity: 1,
-  ratio: 1,
-  mass: 0,
-  volume: 0,
-  material: 'Steel (Carbon Tool)',
-  density: 7850,
-  d1: 100, // 100mm
-  d2: 0,
-  h: 100, // 100mm
-  w: 100,
-  l: 100,
-  r_offset: 0,
-  inertia: 0
-};
-
 export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -68,98 +18,9 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
   title
 }) => {
   const [components, setComponents] = useState<InertiaComponent[]>([
-     calculatePhysics({ ...DEFAULT_ROW, id: Date.now().toString() })
+     calculateInertiaPhysics({ ...DEFAULT_INERTIA_ROW, id: Date.now().toString() })
   ]);
   const [selectedId, setSelectedId] = useState<string>(components[0].id);
-
-  // Helper to calculate Mass, Volume and Inertia based on geometry and density
-  function calculatePhysics(comp: InertiaComponent): InertiaComponent {
-    if (comp.type === 'User Spec.') {
-       // For User Spec, we assume volume is not auto-calc'd unless we add fields for it.
-       // Mass and Inertia are direct inputs/preserved.
-       return comp; 
-    }
-
-    // 1. Dimensions to SI Units (Meters)
-    const d1_m = comp.d1 / 1000;
-    const d2_m = comp.d2 / 1000;
-    const h_m = comp.h / 1000;
-    const w_m = comp.w / 1000;
-    const l_m = comp.l / 1000;
-    const r_offset_m = comp.r_offset / 1000;
-
-    // 2. Calculate Volume (m^3)
-    let vol_m3 = 0;
-    if (comp.type === 'Solid Cylinder') {
-      const radius = d1_m / 2;
-      vol_m3 = Math.PI * Math.pow(radius, 2) * h_m;
-    } else if (comp.type === 'Hollow Cylinder') {
-      const r_out = d1_m / 2;
-      const r_in = d2_m / 2;
-      vol_m3 = Math.PI * (Math.pow(r_out, 2) - Math.pow(r_in, 2)) * h_m;
-    } else if (comp.type === 'Cuboid') {
-      vol_m3 = w_m * l_m * h_m;
-    } else if (comp.type === 'Solid Sphere') {
-      const radius = d1_m / 2;
-      vol_m3 = (4/3) * Math.PI * Math.pow(radius, 3);
-    } else if (comp.type === 'Hollow Sphere') {
-      const r_out = d1_m / 2;
-      const r_in = d2_m / 2;
-      vol_m3 = (4/3) * Math.PI * (Math.pow(r_out, 3) - Math.pow(r_in, 3));
-    } else if (comp.type === 'Solid Cone') {
-      const radius = d1_m / 2;
-      vol_m3 = (1/3) * Math.PI * Math.pow(radius, 2) * h_m;
-    }
-
-    // 3. Calculate Mass (kg)
-    const mass = vol_m3 * comp.density;
-
-    // 4. Calculate Base Inertia (kg*m^2) around Center of Mass
-    let I_cm_si = 0;
-    if (comp.type === 'Solid Cylinder') {
-      const radius = d1_m / 2;
-      I_cm_si = 0.5 * mass * Math.pow(radius, 2);
-    } else if (comp.type === 'Hollow Cylinder') {
-      const r_out = d1_m / 2;
-      const r_in = d2_m / 2;
-      I_cm_si = 0.5 * mass * (Math.pow(r_out, 2) + Math.pow(r_in, 2));
-    } else if (comp.type === 'Cuboid') {
-       // Rotating around axis parallel to H (so using L and W)
-       I_cm_si = (mass * (Math.pow(l_m, 2) + Math.pow(w_m, 2))) / 12;
-    } else if (comp.type === 'Solid Sphere') {
-      const radius = d1_m / 2;
-      I_cm_si = (2/5) * mass * Math.pow(radius, 2);
-    } else if (comp.type === 'Hollow Sphere') {
-      const r_out = d1_m / 2;
-      const r_in = d2_m / 2;
-      // I = 2/5 * M * (R^5 - r^5) / (R^3 - r^3)
-      const num = Math.pow(r_out, 5) - Math.pow(r_in, 5);
-      const den = Math.pow(r_out, 3) - Math.pow(r_in, 3);
-      // Avoid division by zero
-      if (den > 0) {
-        I_cm_si = (2/5) * mass * (num / den);
-      }
-    } else if (comp.type === 'Solid Cone') {
-      const radius = d1_m / 2;
-      // Around central axis
-      I_cm_si = (3/10) * mass * Math.pow(radius, 2);
-    }
-
-    // 5. Parallel Axis Theorem & Transmission (kg*m^2)
-    const I_parallel_si = I_cm_si + (mass * Math.pow(r_offset_m, 2));
-    const I_total_si = I_parallel_si * comp.quantity * Math.pow(comp.ratio, 2);
-
-    // 6. Convert SI Inertia (kg*m^2) to App Base Unit (kg*cm^2)
-    // 1 m^2 = 10000 cm^2
-    const I_total_storage = I_total_si * 10000;
-
-    return {
-      ...comp,
-      volume: vol_m3,
-      mass: mass,
-      inertia: I_total_storage
-    };
-  }
 
   const updateComponent = (id: string, field: keyof InertiaComponent, value: any) => {
     setComponents(prev => prev.map(c => {
@@ -184,7 +45,7 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
       
       if (updated.type !== 'User Spec.') {
          if (field !== 'mass' && field !== 'inertia') {
-             updated = calculatePhysics(updated);
+             updated = calculateInertiaPhysics(updated);
          } else if (field === 'mass') {
              // Re-calc inertia if mass changes manually
              const m = updated.mass;
@@ -229,7 +90,7 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
   const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (components.length <= 1) {
-        setComponents([calculatePhysics({ ...DEFAULT_ROW, id: Date.now().toString() })]);
+        setComponents([calculateInertiaPhysics({ ...DEFAULT_INERTIA_ROW, id: Date.now().toString() })]);
         return;
     }
     const newComps = components.filter(c => c.id !== id);
@@ -334,7 +195,7 @@ export const InertiaCalculatorModal: React.FC<InertiaCalculatorModalProps> = ({
               className="p-1 pl-6 text-gray-400 italic cursor-pointer hover:bg-gray-50 border-b border-gray-100 flex items-center"
               onClick={() => {
                 const newId = Date.now().toString();
-                setComponents([...components, calculatePhysics({ ...DEFAULT_ROW, id: newId })]);
+                setComponents([...components, calculateInertiaPhysics({ ...DEFAULT_INERTIA_ROW, id: newId })]);
                 setSelectedId(newId);
               }}
             >

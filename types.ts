@@ -1,5 +1,25 @@
 
+import { z } from 'zod';
+
 export type NodeType = 'group' | 'axis' | 'mechanism' | 'gearbox' | 'motor_drive';
+
+export const GroupParametersSchema = z.object({
+  cycleTime: z.string().optional(),
+}).catchall(z.any());
+
+export const AxisParametersSchema = z.object({
+  axisName: z.string().optional(),
+  profileType: z.string().optional(),
+  mechanismType: z.string().optional(),
+  gearRatioNum: z.number().optional(),
+  gearRatioDen: z.number().optional(),
+  motorModel: z.string().optional(),
+  motorVendor: z.string().optional(),
+  driveModel: z.string().optional(),
+}).catchall(z.any());
+
+export type GroupParameters = z.infer<typeof GroupParametersSchema>;
+export type AxisParameters = z.infer<typeof AxisParametersSchema>;
 
 export interface TreeNode {
   id: string;
@@ -8,10 +28,37 @@ export interface TreeNode {
   type: NodeType;
   children?: TreeNode[];
   expanded?: boolean;
-  parameters?: Record<string, string | number | boolean>;
+  parameters?: any; // We can type this strictly later, but for now allow any
 }
 
 export type CamMotionLaw = 'Straight Line' | 'Poly5' | 'Sine' | 'Modified Sine' | 'Modified Trapezoid';
+
+export type SegmentType = 'Accel/Decel' | 'Trapezoid' | 'Triangle' | 'S-Curve' | 'Dwell/Traverse' | 'Sine';
+export type CalcTarget = 'duration' | 'distance' | 'velocity';
+export type ProfileType = 'Time Based' | 'Master/Follower' | 'Camming';
+
+export interface MotionSegment {
+  id: string;
+  type: SegmentType;
+  duration: number; 
+  distance: number; 
+  velocity: number; 
+  accel: number; 
+  decel: number;
+  jerk: number;
+  payload: number; 
+  calcTarget: CalcTarget;
+}
+
+export interface TimePoint {
+  t: number;
+  masterPos: number;
+  pos: number;
+  vel: number;
+  acc: number;
+  jerk: number;
+  torque: number;
+}
 
 export interface CamSector {
   id: string;

@@ -102,15 +102,23 @@ export const UnitInput = ({
   }, [availableUnits]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVal = e.target.value;
-    setLocalValue(newVal);
-    const baseVal = toBase(newVal, type, currentUnit);
+    setLocalValue(e.target.value);
+  };
+
+  const submitValue = (val: string) => {
+    const baseVal = toBase(val, type, currentUnit);
     onChange(baseVal);
   };
 
   const handleBlur = () => {
     setIsEditing(false);
-    setLocalValue(computedDisplay);
+    submitValue(localValue);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur();
+    }
   };
 
   const handleFocus = () => {
@@ -132,6 +140,7 @@ export const UnitInput = ({
           onChange={handleInputChange}
           onBlur={handleBlur}
           onFocus={handleFocus}
+          onKeyDown={handleKeyDown}
           readOnly={readOnly}
           className={`w-full min-w-0 text-right text-xs border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-blue-500 h-6 ${readOnly ? 'bg-gray-100 text-gray-500' : 'bg-white text-gray-900'}`} 
           style={{ 
