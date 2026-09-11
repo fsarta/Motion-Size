@@ -86,7 +86,11 @@ export const UnitInput = ({
   const [currentUnit, setCurrentUnit] = useState<string>(() => availableUnits[0] || getDefaultUnit(type));
   const [isEditing, setIsEditing] = useState(false);
   
-  const computedDisplay = useMemo(() => toDisplay(value, type, currentUnit), [value, type, currentUnit]);
+  const computedDisplay = useMemo(() => {
+    if (typeof value === 'number' && isNaN(value)) return "0";
+    if (typeof value === 'string' && isNaN(parseFloat(value))) return "0";
+    return toDisplay(value, type, currentUnit);
+  }, [value, type, currentUnit]);
   const [localValue, setLocalValue] = useState(computedDisplay);
 
   useEffect(() => {
@@ -106,7 +110,10 @@ export const UnitInput = ({
   };
 
   const submitValue = (val: string) => {
-    const baseVal = toBase(val, type, currentUnit);
+    let baseVal = toBase(val, type, currentUnit);
+    if (isNaN(parseFloat(baseVal))) {
+        baseVal = '0';
+    }
     onChange(baseVal);
   };
 

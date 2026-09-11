@@ -39,7 +39,7 @@ export const PowerGroupForm = ({ params, onUpdate }: { params: any, onUpdate: (p
       </div>
       <div>
         <InputGroup label="Infeed Peak Power">
-           <UnitInput value={params.infeedPeakPower} onChange={(v) => handleChange('infeedPeakPower', v)} type="efficiency" />
+           <UnitInput value={params.infeedPeakPower} onChange={(v) => handleChange('infeedPeakPower', v)} type="power" />
         </InputGroup>
         <InputGroup label="Target Bus Voltage">
            <UnitInput value={params.targetBusVoltage} onChange={(v) => handleChange('targetBusVoltage', v)} type="voltage" />

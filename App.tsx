@@ -1,12 +1,15 @@
-
 import React from 'react';
 import { Ribbon } from './components/Ribbon';
 import { TreeView } from './components/TreeView';
 import { WorkArea } from './components/MainView';
-import { HelpCircle } from 'lucide-react';
-import { DeleteConfirmationModal } from './components/modals/DeleteConfirmationModal';
+import { HelpCircle, X } from 'lucide-react';
+import { ConfirmationModal } from './components/modals/ConfirmationModal';
 import { CamTableManagerModal } from './components/modals/CamTableManagerModal';
+import { WizardPanel } from './components/WizardPanel';
 import { useProjectStore } from './store/useProjectStore';
+import { downloadProjectFile, openProjectFile, loadAutoSave } from './utils/projectIO';
+import { initialData } from './initialData';
+import { GlobalBomModal } from './components/modals/GlobalBomModal';
 
 const Footer = () => (
   <div className="h-6 bg-win-blue/10 border-t border-gray-300 flex items-center px-2 text-xs text-gray-600 justify-between shrink-0">
@@ -23,15 +26,21 @@ const Footer = () => (
 );
 
 const App = () => {
+  const [isBOMOpen, setIsBOMOpen] = React.useState(false);
   const {
     data,
     selectedNodeId,
     clipboard,
     nodeToDelete,
     isCamManagerOpen,
+    isWizardOpen,
     camTables,
+    addCamTable,
+    deleteCamTable,
+    updateCamTable,
     setNodeToDelete,
     setIsCamManagerOpen,
+    setIsWizardOpen,
     toggleNode,
     updateNode,
     addAxis,
@@ -41,7 +50,25 @@ const App = () => {
     moveNode,
     setClipboard,
     setSelectedNodeId,
+    loadProject,
   } = useProjectStore();
+
+  const handleSave = () => downloadProjectFile(data, camTables, 'MotionSize Project');
+
+  const handleOpen = async () => {
+    try {
+      const project = await openProjectFile();
+      loadProject(project.data, project.camTables);
+    } catch (e) {
+      console.error('Failed to open project:', e);
+    }
+  };
+
+  const handleNew = () => {
+    if (confirm('Create new project? Unsaved changes will be lost.')) {
+      loadProject(initialData, []);
+    }
+  };
 
   const handleCopy = (id: string) => {
     const node = findNode(data, id);
@@ -64,13 +91,36 @@ const App = () => {
     return null;
   };
 
-  const selectedNode = findNode(data, selectedNodeId) || data[0];
-
   return (
     <div className="flex flex-col h-full w-full overflow-hidden select-none">
-      <DeleteConfirmationModal node={nodeToDelete} onConfirm={deleteNode} onCancel={() => setNodeToDelete(null)} />
-      <CamTableManagerModal isOpen={isCamManagerOpen} onClose={() => setIsCamManagerOpen(false)} camTables={camTables} onAdd={() => {}} onDelete={() => {}} onUpdateTable={() => {}} />
-      <Ribbon onAddAxis={addAxis} onOpenCamManager={() => setIsCamManagerOpen(true)} />
+      <ConfirmationModal
+        isOpen={!!nodeToDelete}
+        title="Confirm Delete"
+        message={<>Are you sure you want to delete <br/><span className="font-bold">"{nodeToDelete?.label}"</span>?</>}
+        onConfirm={deleteNode}
+        onCancel={() => setNodeToDelete(null)}
+        variant="danger"
+      />
+      <CamTableManagerModal 
+        isOpen={isCamManagerOpen} 
+        onClose={() => setIsCamManagerOpen(false)} 
+        camTables={camTables} 
+        onAdd={(name) => addCamTable(name)}
+        onDelete={(id) => deleteCamTable(id)}
+        onUpdateTable={(table) => updateCamTable(table.id, table)}
+      />
+      {isWizardOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-[800px] h-[600px] bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col relative">
+            <button onClick={() => setIsWizardOpen(false)} className="absolute top-2 right-2 p-2 hover:bg-gray-100 rounded-full z-10">
+              <X size={20} className="text-gray-500" />
+            </button>
+            <WizardPanel />
+          </div>
+        </div>
+      )}
+      <GlobalBomModal isOpen={isBOMOpen} onClose={() => setIsBOMOpen(false)} data={data} />
+      <Ribbon onAddAxis={addAxis} onOpenCamManager={() => setIsCamManagerOpen(true)} onSave={handleSave} onOpen={handleOpen} onNew={handleNew} onOpenBOM={() => setIsBOMOpen(true)} />
       <div className="flex-1 flex flex-row overflow-hidden relative">
         <TreeView 
           data={data} 

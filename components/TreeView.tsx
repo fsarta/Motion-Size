@@ -221,7 +221,13 @@ export const TreeView: React.FC<TreeViewProps> = ({
     <div className="w-64 bg-white border-r border-gray-300 h-full flex flex-col shrink-0 relative" onContextMenu={handleGlobalContextMenu}>
       <div className="bg-gray-600 text-white text-xs px-2 py-1 font-bold flex justify-between items-center select-none" onContextMenu={(e) => e.stopPropagation()}>
         <span>Project Overview</span>
-        <span className="bg-green-500 text-white px-1 rounded text-[10px]">79%</span>
+        {(() => {
+          let total = 0, complete = 0;
+          const count = (nodes: any[]) => { nodes.forEach(n => { if (n.type === 'axis') { total++; if (n.parameters?.motorModel) complete++; } if (n.children) count(n.children); }); };
+          count(data);
+          const pct = total > 0 ? Math.round((complete / total) * 100) : 0;
+          return <span className={`${pct >= 100 ? 'bg-green-500' : pct > 0 ? 'bg-amber-500' : 'bg-gray-400'} text-white px-1 rounded text-[10px]`}>{pct}%</span>;
+        })()}
       </div>
       <div className="flex-1 overflow-y-auto py-1" onContextMenu={(e) => e.stopPropagation()}>
         {data.map(node => (

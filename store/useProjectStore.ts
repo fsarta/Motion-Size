@@ -2,6 +2,22 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { TreeNode, CamTable } from '../types';
 import { initialData } from '../initialData';
+import { loadAutoSave, autoSave } from '../utils/projectIO';
+
+const savedProject = loadAutoSave();
+const startData = savedProject?.data || initialData;
+const startCamTables = savedProject?.camTables || [
+  { 
+      id: 'Cam_1', 
+      name: 'RotaryShear_3', 
+      masterRange: 360, 
+      sectors: [
+          { id: '1', masterStart: 0, masterEnd: 90, slaveStart: 0, slaveEnd: 30, law: 'Poly5' },
+          { id: '2', masterStart: 90, masterEnd: 270, slaveStart: 30, slaveEnd: 30, law: 'Straight Line' },
+          { id: '3', masterStart: 270, masterEnd: 360, slaveStart: 30, slaveEnd: 0, law: 'Poly5' }
+      ]
+  }
+];
 
 interface ProjectState {
   data: TreeNode[];
@@ -10,13 +26,28 @@ interface ProjectState {
   nodeToDelete: TreeNode | null;
   camTables: CamTable[];
   isCamManagerOpen: boolean;
+  isWizardOpen: boolean;
+  history: {
+    past: { data: TreeNode[]; camTables: CamTable[] }[];
+    future: { data: TreeNode[]; camTables: CamTable[] }[];
+  };
   
   // Actions
+  loadProject: (data: TreeNode[], camTables: CamTable[]) => void;
+  undo: () => void;
+  redo: () => void;
+  saveHistoryState: () => void;
+  
+  addCamTable: (name: string) => void;
+  deleteCamTable: (id: string) => void;
+  updateCamTable: (id: string, updated: CamTable) => void;
+
   setData: (data: TreeNode[]) => void;
   setSelectedNodeId: (id: string) => void;
   setClipboard: (clipboard: { node: TreeNode, isCut: boolean } | null) => void;
   setNodeToDelete: (node: TreeNode | null) => void;
   setIsCamManagerOpen: (isOpen: boolean) => void;
+  setIsWizardOpen: (isOpen: boolean) => void;
   setCamTables: (tables: CamTable[]) => void;
   
   toggleNode: (id: string) => void;
@@ -52,30 +83,96 @@ const findParentGroup = (nodes: TreeNode[], id: string): TreeNode | null => {
 
 export const useProjectStore = create<ProjectState>()(
   immer((set, get) => ({
-    data: initialData,
+    data: startData,
     selectedNodeId: 'root',
     clipboard: null,
     nodeToDelete: null,
-    camTables: [
-      { 
-          id: 'Cam_1', 
-          name: 'RotaryShear_3', 
-          masterRange: 360, 
-          sectors: [
-              { id: '1', masterStart: 0, masterEnd: 90, slaveStart: 0, slaveEnd: 30, law: 'Poly5' },
-              { id: '2', masterStart: 90, masterEnd: 270, slaveStart: 30, slaveEnd: 30, law: 'Straight Line' },
-              { id: '3', masterStart: 270, masterEnd: 360, slaveStart: 30, slaveEnd: 0, law: 'Poly5' }
-          ]
-      }
-    ],
+    camTables: startCamTables,
     isCamManagerOpen: false,
+    isWizardOpen: false,
+    history: { past: [], future: [] },
 
-    setData: (data) => set({ data }),
+    loadProject: (data, camTables) => set((state) => {
+      state.data = data;
+      state.camTables = camTables;
+      state.selectedNodeId = data[0]?.id || 'root';
+      state.clipboard = null;
+      state.nodeToDelete = null;
+      state.history = { past: [], future: [] };
+    }),
+
+    saveHistoryState: () => set((state) => {
+      // Create deep copies to avoid immer proxy issues or reference mutations
+      const pastState = {
+        data: JSON.parse(JSON.stringify(state.data)),
+        camTables: JSON.parse(JSON.stringify(state.camTables))
+      };
+      state.history.past.push(pastState);
+      if (state.history.past.length > 50) {
+        state.history.past.shift();
+      }
+      state.history.future = [];
+    }),
+
+    undo: () => set((state) => {
+      if (state.history.past.length > 0) {
+        const previousState = state.history.past.pop()!;
+        const currentState = {
+          data: JSON.parse(JSON.stringify(state.data)),
+          camTables: JSON.parse(JSON.stringify(state.camTables))
+        };
+        state.history.future.push(currentState);
+        
+        state.data = previousState.data;
+        state.camTables = previousState.camTables;
+      }
+    }),
+
+    redo: () => set((state) => {
+      if (state.history.future.length > 0) {
+        const nextState = state.history.future.pop()!;
+        const currentState = {
+          data: JSON.parse(JSON.stringify(state.data)),
+          camTables: JSON.parse(JSON.stringify(state.camTables))
+        };
+        state.history.past.push(currentState);
+        
+        state.data = nextState.data;
+        state.camTables = nextState.camTables;
+      }
+    }),
+
+    setData: (data) => set((state) => { state.saveHistoryState(); state.data = data; }),
     setSelectedNodeId: (id) => set({ selectedNodeId: id }),
     setClipboard: (clipboard) => set({ clipboard }),
     setNodeToDelete: (nodeToDelete) => set({ nodeToDelete }),
     setIsCamManagerOpen: (isCamManagerOpen) => set({ isCamManagerOpen }),
-    setCamTables: (camTables) => set({ camTables }),
+    setIsWizardOpen: (isWizardOpen) => set({ isWizardOpen }),
+    setCamTables: (camTables) => set((state) => { state.saveHistoryState(); state.camTables = camTables; }),
+
+    addCamTable: (name) => set((state) => {
+      state.saveHistoryState();
+      state.camTables.push({
+        id: `cam_${crypto.randomUUID()}`,
+        name,
+        masterRange: 360,
+        sectors: [
+          { id: '1', masterStart: 0, masterEnd: 180, slaveStart: 0, slaveEnd: 100, law: 'Poly5' },
+          { id: '2', masterStart: 180, masterEnd: 360, slaveStart: 100, slaveEnd: 0, law: 'Poly5' }
+        ]
+      });
+    }),
+
+    deleteCamTable: (id) => set((state) => {
+      state.saveHistoryState();
+      state.camTables = state.camTables.filter(t => t.id !== id);
+    }),
+
+    updateCamTable: (id, updated) => set((state) => {
+      state.saveHistoryState();
+      const idx = state.camTables.findIndex(t => t.id === id);
+      if (idx !== -1) state.camTables[idx] = updated;
+    }),
 
     toggleNode: (id) => set((state) => {
       const node = findNode(state.data, id);
@@ -85,6 +182,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
 
     updateNode: (id, newParams) => set((state) => {
+      state.saveHistoryState();
       const node = findNode(state.data, id);
       if (node) {
         node.parameters = { ...node.parameters, ...newParams };
@@ -95,6 +193,7 @@ export const useProjectStore = create<ProjectState>()(
     }),
 
     addAxis: () => set((state) => {
+      state.saveHistoryState();
       let targetGroup = findNode(state.data, state.selectedNodeId);
       if (!targetGroup || targetGroup.type !== 'group') {
           targetGroup = state.data.find((n: any) => n.type === 'group') || state.data[0];
@@ -104,7 +203,7 @@ export const useProjectStore = create<ProjectState>()(
         const count = targetGroup.children.filter((c: any) => c.type === 'axis').length + 1;
         const axisLabel = `Axis ${count}`;
         const newAxis: TreeNode = {
-          id: `axis_${Date.now()}`,
+          id: `axis_${crypto.randomUUID()}`,
           label: axisLabel,
           icon: 'axis',
           type: 'axis',
@@ -122,8 +221,9 @@ export const useProjectStore = create<ProjectState>()(
     }),
 
     addGroup: () => set((state) => {
+      state.saveHistoryState();
       const newGroup: TreeNode = {
-        id: `group_${Date.now()}`,
+        id: `group_${crypto.randomUUID()}`,
         label: `Power Group ${state.data.length + 1}`,
         icon: 'group',
         type: 'group',
@@ -136,6 +236,7 @@ export const useProjectStore = create<ProjectState>()(
 
     deleteNode: () => set((state) => {
       if (!state.nodeToDelete) return;
+      state.saveHistoryState();
       const idToDelete = state.nodeToDelete.id;
       
       const removeRecursive = (nodes: TreeNode[]) => {
@@ -160,6 +261,7 @@ export const useProjectStore = create<ProjectState>()(
 
     pasteNode: (targetId) => set((state) => {
       if (!state.clipboard) return;
+      state.saveHistoryState();
       
       if (state.clipboard.isCut) {
         const idToRemove = state.clipboard.node.id;
@@ -181,7 +283,7 @@ export const useProjectStore = create<ProjectState>()(
       // JSON parse/stringify is safe here to deep clone the clipboard node
       const newNode = state.clipboard.node ? JSON.parse(JSON.stringify(state.clipboard.node)) : null;
       if (!newNode) return;
-      newNode.id = `${newNode.type}_${Date.now()}`;
+      newNode.id = `${newNode.type}_${crypto.randomUUID()}`;
       if (!state.clipboard.isCut) newNode.label += " (Copy)";
       
       if (newNode.type === 'group') {
@@ -204,6 +306,9 @@ export const useProjectStore = create<ProjectState>()(
       if (draggedId === targetId) return;
       const draggedNode = findNode(state.data, draggedId);
       if (!draggedNode) return;
+      
+      state.saveHistoryState();
+
       
       // JSON clone the dragged node to insert it later
       const nodeToInsert = draggedNode ? JSON.parse(JSON.stringify(draggedNode)) : null;
@@ -251,3 +356,11 @@ export const useProjectStore = create<ProjectState>()(
     })
   }))
 );
+
+let autoSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+useProjectStore.subscribe((state) => {
+  if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+  autoSaveTimeout = setTimeout(() => {
+    autoSave(state.data, state.camTables);
+  }, 2000);
+});

@@ -3,7 +3,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Trash2, Lock, Unlock, CheckSquare, Square, Activity, AlertCircle, Timer, Gauge as GaugeIcon, Info } from 'lucide-react';
 import { UnitInput, InputGroup, Select, SectionHeader } from './Common';
 import { UnitType } from '../utils/unitConversion';
-import { MotionSegment, TimePoint, ProfileType, SegmentType, CalcTarget } from '../types';
+import { MotionSegment, TimePoint, ProfileType, SegmentType, CalcTarget, SizingMetrics } from '../types';
 
 type TraceType = 'pos' | 'vel' | 'acc' | 'jerk' | 'torque' | 'masterPos';
 
@@ -44,6 +44,8 @@ const ModeToggle = ({ mode, onToggle }: { mode: 'value' | 'time', onToggle: () =
   </button>
 );
 
+import { useProjectStore } from '../store/useProjectStore';
+
 export const ProfileEditor = ({ 
   profileType = 'Time Based', 
   masterAxisName, 
@@ -52,8 +54,21 @@ export const ProfileEditor = ({
   masterProfileData,
   posUnitType = 'angle',
   isReadOnly = false,
-  onProfileChange 
+  onProfileChange,
+  totalInertia,
+  onSizingMetricsChange,
+  friction = 0,
+  efficiency = 1,
+  gravityForce = 0,
+  params
 }: any) => {
+  const { camTables } = useProjectStore();
+  const camTable = useMemo(() => {
+    if (profileType === 'Camming' && params?.camTableName) {
+      return camTables.find(t => t.name === params.camTableName);
+    }
+    return undefined;
+  }, [profileType, params?.camTableName, camTables]);
   const [segments, setSegments] = useState<MotionSegment[]>(DEFAULT_SEGMENTS);
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_SEGMENTS[0].id);
   const [cursorTime, setCursorTime] = useState<number | null>(null);
@@ -86,23 +101,53 @@ export const ProfileEditor = ({
 
   const [timeSeries, setTimeSeries] = useState<TimePoint[]>([]);
   
+  const workerRef = useRef<Worker | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    const worker = new Worker(new URL('../engines/motionWorker.ts', import.meta.url), { type: 'module' });
+    workerRef.current = new Worker(new URL('../engines/motionWorker.ts', import.meta.url), { type: 'module' });
+    workerRef.current.onmessage = (e) => setTimeSeries(e.data);
+    return () => { workerRef.current?.terminate(); };
+  }, []);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      workerRef.current?.postMessage({
+        segments,
+        totalInertia: totalInertia ?? 0.015,
+        profileType,
+        gearRatio,
+        masterProfileData,
+        friction,
+        efficiency,
+        gravityForce,
+        camTable
+      });
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [segments, totalInertia, profileType, gearRatio, masterProfileData, friction, efficiency, gravityForce, camTable]);
+
+  useEffect(() => {
+    if (timeSeries.length === 0) return;
+    const torques = timeSeries.map(p => p.torque);
+    const velocities = timeSeries.map(p => p.vel);
+    const rmsT = Math.sqrt(torques.reduce((acc, v) => acc + v * v, 0) / torques.length);
+    const peakT = Math.max(...torques.map(Math.abs));
+    const maxVel = Math.max(...velocities.map(Math.abs));
     
-    worker.onmessage = (e) => {
-      setTimeSeries(e.data);
-    };
-
-    worker.postMessage({
-      segments,
-      totalInertia: 0.015,
-      profileType,
-      gearRatio,
-      masterProfileData
-    });
-
-    return () => worker.terminate();
-  }, [segments, profileType, gearRatio, masterProfileData]);
+    // Convert velocity to RPM if rotary (vel is in deg/s, 1 rpm = 6 deg/s)
+    const maxSpeedRpm = posUnitType === 'angle' ? maxVel / 6 : maxVel; // linear needs mechanism conversion
+    
+    if (onSizingMetricsChange) {
+      onSizingMetricsChange({
+        rmsTorque: rmsT,
+        peakTorque: peakT,
+        rmsSpeed: maxSpeedRpm * 0.7, // estimate
+        peakSpeed: maxSpeedRpm
+      });
+    }
+  }, [timeSeries]);
 
   const [traces, setTraces] = useState<TraceConfig[]>([
     { key: 'pos', label: 'Position', color: '#10b981', unitType: posUnitType, active: true },

@@ -1,7 +1,7 @@
 
 import { MotorSpec, DriveSpec, GearboxSpec } from './types';
 
-export const motorCatalog: MotorSpec[] = [
+export const defaultMotorCatalog: MotorSpec[] = [
   // YASKAWA (Matching image exactly)
   { vendor: "Yaskawa", model: "SGM7A-25D*F", ratedSpeed: 3000, peakSpeed: 6000, ratedTorque: 7.96, peakTorque: 23.9, ratedPower: 2.5, ratedCurrent: 14.2, efficiency: 92.0, powerFactor: 0.95, inertia: 12.4, allowableInertiaRatio: 10, costIndex: 1.06 },
   { vendor: "Yaskawa", model: "SGM7A-30D*F", ratedSpeed: 3000, peakSpeed: 6000, ratedTorque: 9.80, peakTorque: 29.4, ratedPower: 3.0, ratedCurrent: 18.2, efficiency: 92.5, powerFactor: 0.95, inertia: 15.6, allowableInertiaRatio: 5, costIndex: 1.28 },
@@ -18,10 +18,36 @@ export const motorCatalog: MotorSpec[] = [
   { vendor: "Siemens", model: "1FK7080-2AF71", ratedSpeed: 3000, peakSpeed: 6000, ratedTorque: 12.0, peakTorque: 36.0, ratedPower: 3.5, ratedCurrent: 7.8, efficiency: 94.5, powerFactor: 0.94, inertia: 6.2, allowableInertiaRatio: 8, costIndex: 1.45 }
 ];
 
-export const driveCatalog: DriveSpec[] = [
+export const defaultDriveCatalog: DriveSpec[] = [
   { vendor: "Siemens", model: "S120-3A-400V-18A", supplyVoltage: 400, maxCurrent: 18.0, pwmFrequency: 8 },
   { vendor: "Yaskawa", model: "SGD7S-200A", supplyVoltage: 200, maxCurrent: 20.0, pwmFrequency: 8 }
 ];
+
+export function getMotorCatalog(): MotorSpec[] {
+  const custom = localStorage.getItem('custom-motors');
+  const customMotors: MotorSpec[] = custom ? JSON.parse(custom) : [];
+  return [...defaultMotorCatalog, ...customMotors];
+}
+
+export function getDriveCatalog(): DriveSpec[] {
+  const custom = localStorage.getItem('custom-drives');
+  const customDrives: DriveSpec[] = custom ? JSON.parse(custom) : [];
+  return [...defaultDriveCatalog, ...customDrives];
+}
+
+export function addCustomMotor(motor: MotorSpec) {
+  const custom = localStorage.getItem('custom-motors');
+  const customMotors: MotorSpec[] = custom ? JSON.parse(custom) : [];
+  customMotors.push(motor);
+  localStorage.setItem('custom-motors', JSON.stringify(customMotors));
+}
+
+export function addCustomDrive(drive: DriveSpec) {
+  const custom = localStorage.getItem('custom-drives');
+  const customDrives: DriveSpec[] = custom ? JSON.parse(custom) : [];
+  customDrives.push(drive);
+  localStorage.setItem('custom-drives', JSON.stringify(customDrives));
+}
 
 export const gearboxCatalog: GearboxSpec[] = [
   { vendor: "Generic", model: "G-10-1", ratio: 10, efficiency: 95, inertia: 0.5, backlash: 5, maxInputSpeed: 4000 }

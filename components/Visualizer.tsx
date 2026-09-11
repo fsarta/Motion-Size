@@ -132,11 +132,11 @@ export const Visualizer = ({ axes }: { axes: TreeNode[] }) => {
               {visibleAxes.map((axis, index) => {
                  // The index passed here is local to the slice, so we calculate global index for efficiency seed
                  const globalIndex = visibleRange.start + index;
-                 const efficiency = 85 + (globalIndex * 2) % 10;
+                  const efficiency = parseFloat(String(axis.parameters?.motorEfficiency || 90));
                  return (
                   <div key={axis.id} className="flex flex-col items-center -mt-16 shrink-0">
                     <EfficiencyBar value={efficiency} />
-                    <DriveUnit label={axis.label.split(' ')[0]} />
+                    <DriveUnit label={axis.label} />
                   </div>
                  );
               })}

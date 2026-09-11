@@ -134,6 +134,57 @@ const MECHANISM_STRUCTURES: Record<string, MechanismSection[]> = {
 };
 
 const MechanismVisualizer = ({ type, angle }: { type: string, angle: number }) => {
+  const getSvgContent = () => {
+    switch (type) {
+      case 'Belt & Pulley':
+        return (
+          <>
+            <circle cx="150" cy="150" r="40" fill="#999" stroke="#333" strokeWidth="2" />
+            <circle cx="450" cy="150" r="40" fill="#999" stroke="#333" strokeWidth="2" />
+            <path d="M150,110 L450,110" stroke="#333" strokeWidth="4" />
+            <path d="M150,190 L450,190" stroke="#333" strokeWidth="4" />
+            <rect x="250" y="80" width="100" height="30" fill="#f0f0f0" stroke="#333" strokeWidth="2" />
+          </>
+        );
+      case 'Ball Screw':
+        return (
+          <>
+            <rect x="100" y="140" width="400" height="20" fill="#ccc" stroke="#333" />
+            <path d="M100,140 L500,160 M100,145 L500,165 M100,150 L500,170 M100,155 L500,175" stroke="#999" strokeWidth="1" />
+            <rect x="250" y="120" width="100" height="60" fill="#f0f0f0" stroke="#333" strokeWidth="2" />
+          </>
+        );
+      case 'Rack & Pinion':
+        return (
+          <>
+            <rect x="100" y="180" width="400" height="20" fill="#999" stroke="#333" />
+            {Array.from({length: 20}).map((_, i) => (
+               <line key={i} x1={110 + i * 20} y1={180} x2={110 + i * 20} y2={175} stroke="#333" strokeWidth="2" />
+            ))}
+            <circle cx="300" cy="135" r="40" fill="#ccc" stroke="#333" strokeWidth="2" />
+            <circle cx="300" cy="135" r="5" fill="#333" />
+          </>
+        );
+      case 'Rotary Table':
+      case 'Roll Feed':
+        return (
+          <>
+            <ellipse cx="300" cy="150" rx="150" ry="40" fill="#ccc" stroke="#333" strokeWidth="2" />
+            <rect x="280" y="150" width="40" height="80" fill="#999" stroke="#333" strokeWidth="2" />
+          </>
+        );
+      default: // Conveyor or unknown
+        return (
+          <>
+            <rect x="100" y="140" width="400" height="20" fill="#ccc" stroke="#333" rx="10" />
+            <circle cx="120" cy="150" r="10" fill="#666" />
+            <circle cx="480" cy="150" r="10" fill="#666" />
+            <rect x="250" y="100" width="100" height="40" fill="#f0f0f0" stroke="#333" strokeWidth="2" />
+          </>
+        );
+    }
+  };
+
   return (
     <div className="flex-1 bg-[#1a73e8] rounded-sm relative overflow-hidden flex items-center justify-center p-4">
       <div className="relative w-full max-w-[500px] h-[180px]">
@@ -144,35 +195,9 @@ const MechanismVisualizer = ({ type, angle }: { type: string, angle: number }) =
                <stop offset="100%" style={{stopColor:'#cccccc', stopOpacity:1}} />
              </linearGradient>
            </defs>
-           <path d="M50,220 L550,220 L580,260 L80,260 Z" fill="url(#grad)" stroke="#333" strokeWidth="1" />
-           <rect x="100" y="200" width="400" height="10" fill="#999" stroke="#333" />
-           <rect x="100" y="215" width="400" height="10" fill="#999" stroke="#333" />
-           <rect x="80" y="208" width="440" height="4" fill="#666" />
-           <rect x="250" y="140" width="100" height="70" fill="#f0f0f0" stroke="#333" strokeWidth="2" />
-           <g stroke="red" strokeWidth="3" fill="red">
-             <path d="M100,160 L200,160" markerEnd="url(#arrow-red)" />
-             <path d="M200,160 L100,160" markerEnd="url(#arrow-red)" />
-             <text x="120" y="150" fill="white" fontSize="12" fontWeight="bold">External Force</text>
-             <path d="M300,135 L300,90" markerEnd="url(#arrow-red)" />
-             <text x="270" y="85" fill="white" fontSize="12" fontWeight="bold">Load Mass</text>
-             <path d="M500,280 L580,280" markerEnd="url(#arrow-red)" />
-             <text x="500" y="300" fill="white" fontSize="12" fontWeight="bold">Direction of Motion</text>
-           </g>
-           <defs>
-             <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-               <path d="M0,0 L0,6 L9,3 z" fill="red" />
-             </marker>
-           </defs>
+           <rect width="600" height="300" fill="url(#grad)" rx="10" />
+           {getSvgContent()}
         </svg>
-        <div className="absolute right-0 top-0 w-32 h-32 opacity-80">
-           <svg viewBox="0 0 100 100">
-              <path d="M10,80 L90,80" stroke="red" strokeWidth="2" />
-              <path d="M10,80 L90,40" stroke="red" strokeWidth="2" />
-              <text x="30" y="70" fill="white" fontSize="8" fontWeight="bold">θ</text>
-              <text x="80" y="35" fill="white" fontSize="8">Motion</text>
-              <text x="80" y="95" fill="white" fontSize="8">Horizontal</text>
-           </svg>
-        </div>
       </div>
     </div>
   );

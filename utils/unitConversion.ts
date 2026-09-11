@@ -1,10 +1,11 @@
 
-export type UnitType = 'torque' | 'power' | 'inertia' | 'length' | 'mass' | 'force' | 'current' | 'voltage' | 'frequency' | 'speed' | 'acceleration' | 'jerk' | 'ratio' | 'efficiency' | 'angle' | 'factor' | 'density' | 'temperature' | 'time' | 'volume';
+export type UnitType = 'torque' | 'power' | 'inertia' | 'length' | 'mass' | 'force' | 'current' | 'voltage' | 'frequency' | 'speed' | 'linearSpeed' | 'acceleration' | 'linearAcceleration' | 'jerk' | 'linearJerk' | 'ratio' | 'efficiency' | 'angle' | 'factor' | 'density' | 'temperature' | 'time' | 'volume';
 
 interface UnitDef {
   label: string;
   factor: number; // Multiplier to go from BASE to THIS UNIT. (Display = Base * Factor)
   precision: number;
+  offset?: number;
 }
 
 // BASE UNITS ASSUMPTION (Internal Storage):
@@ -54,20 +55,31 @@ export const UNIT_DEFINITIONS: Record<UnitType, Record<string, UnitDef>> = {
     'HP': { label: 'HP', factor: 1.34102, precision: 2 },
   },
   speed: {
-    'deg/s': { label: 'deg/s', factor: 1, precision: 1 },
-    'rpm': { label: 'rpm', factor: 1/6, precision: 0 },
+    'rpm': { label: 'rpm', factor: 1, precision: 0 },
+    'deg/s': { label: 'deg/s', factor: 6, precision: 1 },
+    'rad/s': { label: 'rad/s', factor: 0.10472, precision: 3 },
+  },
+  linearSpeed: {
     'mm/s': { label: 'mm/s', factor: 1, precision: 1 },
     'm/s': { label: 'm/s', factor: 0.001, precision: 3 },
+    'in/s': { label: 'in/s', factor: 0.0393701, precision: 2 },
   },
   acceleration: {
     'deg/s²': { label: 'deg/s²', factor: 1, precision: 0 },
+    'rad/s²': { label: 'rad/s²', factor: 0.0174533, precision: 3 },
+  },
+  linearAcceleration: {
     'mm/s²': { label: 'mm/s²', factor: 1, precision: 0 },
     'm/s²': { label: 'm/s²', factor: 0.001, precision: 3 },
     'G': { label: 'G', factor: 1 / 9806.65, precision: 3 },
   },
   jerk: {
     'deg/s³': { label: 'deg/s³', factor: 1, precision: 0 },
+    'rad/s³': { label: 'rad/s³', factor: 0.0174533, precision: 3 },
+  },
+  linearJerk: {
     'mm/s³': { label: 'mm/s³', factor: 1, precision: 0 },
+    'm/s³': { label: 'm/s³', factor: 0.001, precision: 3 },
   },
   density: {
     'kg/m³': { label: 'kg/m³', factor: 1, precision: 0 }, 
@@ -87,7 +99,7 @@ export const UNIT_DEFINITIONS: Record<UnitType, Record<string, UnitDef>> = {
   },
   temperature: {
     'C': { label: '°C', factor: 1, precision: 1 },
-    'F': { label: '°F', factor: 1, precision: 1 }, 
+    'F': { label: '°F', factor: 1.8, offset: 32, precision: 1 }, 
   },
   time: {
     's': { label: 's', factor: 1, precision: 2 },
@@ -109,7 +121,7 @@ export const toDisplay = (baseValue: string | number | undefined, type: UnitType
   const defs = UNIT_DEFINITIONS[type];
   if (!defs || !defs[unitKey]) return String(numValue);
   const def = defs[unitKey];
-  return (numValue * def.factor).toFixed(def.precision);
+  return (numValue * def.factor + (def.offset || 0)).toFixed(def.precision);
 };
 
 export const toBase = (displayValue: string | number, type: UnitType, unitKey: string): string => {
@@ -118,7 +130,8 @@ export const toBase = (displayValue: string | number, type: UnitType, unitKey: s
   const defs = UNIT_DEFINITIONS[type];
   if (!defs || !defs[unitKey]) return String(numValue);
   const def = defs[unitKey];
-  return (numValue / def.factor).toPrecision(10); 
+  const result = (numValue - (def.offset || 0)) / def.factor;
+  return parseFloat(result.toPrecision(10)).toString(); 
 };
 
 export const getDefaultUnit = (type: UnitType): string => {

@@ -3,23 +3,67 @@ import { z } from 'zod';
 
 export type NodeType = 'group' | 'axis' | 'mechanism' | 'gearbox' | 'motor_drive';
 
-export const GroupParametersSchema = z.object({
-  cycleTime: z.string().optional(),
-}).catchall(z.any());
+export interface AxisParameters {
+  // System Data
+  axisUsage?: 'Rotary' | 'Linear';
+  loadType?: 'Continuous' | 'Intermittent';
+  supplyVoltage?: number;
+  ambientTemp?: number;
+  
+  // Mechanism
+  mechanismType?: string;
+  screwInertia?: number;
+  driverInertia?: number;
+  rotatingInertia?: number;
+  transInertia?: number;
+  mechanismEfficiency?: number;
+  kineticFriction?: number;
 
-export const AxisParametersSchema = z.object({
-  axisName: z.string().optional(),
-  profileType: z.string().optional(),
-  mechanismType: z.string().optional(),
-  gearRatioNum: z.number().optional(),
-  gearRatioDen: z.number().optional(),
-  motorModel: z.string().optional(),
-  motorVendor: z.string().optional(),
-  driveModel: z.string().optional(),
-}).catchall(z.any());
+  // Gearbox
+  gearboxVendor?: string;
+  gearboxModel?: string;
+  gearboxRatio?: number;
+  gearboxEfficiency?: number;
+  gearboxInertia?: number;
+  gearboxBacklash?: number;
+  gearboxMaxInputSpeed?: number;
+  
+  // Motor
+  motorVendor?: string;
+  motorModel?: string;
+  ratedSpeed?: number;
+  ratedTorque?: number;
+  ratedPower?: number;
+  ratedCurrent?: number;
+  motorEfficiency?: number;
+  powerFactor?: number;
+  motorInertia?: number;
+  peakTorque?: number;
+  peakSpeed?: number;
+  allowableInertiaRatio?: number;
 
-export type GroupParameters = z.infer<typeof GroupParametersSchema>;
-export type AxisParameters = z.infer<typeof AxisParametersSchema>;
+  // Drive
+  driveVendor?: string;
+  driveModel?: string;
+  driveSupplyVoltage?: number;
+  driveMaxCurrent?: number;
+  pwmFrequency?: number;
+  
+  // Motion Profile
+  profileType?: ProfileType;
+  masterAxis?: string;
+  gearRatioNum?: number;
+  gearRatioDen?: number;
+  motionProfileData?: string; // JSON string of MotionSegment[]
+}
+
+export interface GroupParameters {
+  infeedPeakPower?: number;
+  infeedContinuousPower?: number;
+  busVoltage?: number;
+  regenCapacity?: number;
+  // Any other group params
+}
 
 export interface TreeNode {
   id: string;
@@ -28,7 +72,7 @@ export interface TreeNode {
   type: NodeType;
   children?: TreeNode[];
   expanded?: boolean;
-  parameters?: any; // We can type this strictly later, but for now allow any
+  parameters?: AxisParameters & GroupParameters & Record<string, any>;
 }
 
 export type CamMotionLaw = 'Straight Line' | 'Poly5' | 'Sine' | 'Modified Sine' | 'Modified Trapezoid';
@@ -116,4 +160,11 @@ export interface GearboxSpec {
   inertia: number;
   backlash: number; // arcmin
   maxInputSpeed: number;
+}
+
+export interface SizingMetrics {
+  rmsTorque: number;  // Nm
+  peakTorque: number; // Nm  
+  rmsSpeed: number;   // RPM
+  peakSpeed: number;  // RPM
 }

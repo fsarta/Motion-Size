@@ -9,13 +9,13 @@ export const initialData: TreeNode[] = [
     type: "group",
     expanded: true,
     parameters: {
-      cycleTime: "10",
+      cycleTime: 10,
       configuration: "Multi-Axis",
-      supplyVoltage: "400",
-      supplyPhase: "3",
-      nominalBusVoltage: "540",
-      infeedPeakPower: "0",
-      targetBusVoltage: "0"
+      supplyVoltage: 400,
+      supplyPhase: 3,
+      nominalBusVoltage: 540,
+      infeedPeakPower: 0,
+      targetBusVoltage: 0
     },
     children: [
       { 
@@ -30,14 +30,14 @@ export const initialData: TreeNode[] = [
           feedConstant: 10,
           profileType: "Master/Follower",
           mechanismType: "Belt",
-          massLoad: "50.0",
-          frictionCoeff: "0.15",
-          inclineAngle: "0",
+          massLoad: 50.0,
+          frictionCoeff: 0.15,
+          inclineAngle: 0,
           motorVendor: "Siemens",
           motorModel: "1FK7060-2AC71",
-          vendor: "Generic",
-          model: "G-10-1",
-          ratio: 10
+          gearboxVendor: "Generic",
+          gearboxModel: "G-10-1",
+          gearboxRatio: 10
         }
       },
       { 
@@ -54,12 +54,12 @@ export const initialData: TreeNode[] = [
           cycleMax: 360,
           profileType: "Time Based",
           mechanismType: "Rotation Table",
-          rotatingInertia: "120.0",
+          rotatingInertia: 120.0,
           motorVendor: "Siemens",
           motorModel: "1FK7080-2AF71",
-          vendor: "Generic",
-          model: "G-10-1",
-          ratio: 10
+          gearboxVendor: "Generic",
+          gearboxModel: "G-10-1",
+          gearboxRatio: 10
         }
       }
     ]

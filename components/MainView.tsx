@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Gauge, Activity, Cpu, Settings, Zap, Boxes, ShoppingCart } from 'lucide-react';
-import { TreeNode, CamTable } from '../types';
+import { TreeNode, CamTable, SizingMetrics } from '../types';
 import { ProfileEditor } from './ProfileEditor';
 import { FormTabs } from './Common';
 import { Visualizer } from './Visualizer';
@@ -28,7 +28,7 @@ const BOMView = ({ params }: { params: any }) => (
         </thead>
         <tbody>
             <tr><td className="p-2 border font-semibold">Mechanism</td><td className="p-2 border">{params.mechanismType}</td><td className="p-2 border">-</td></tr>
-            <tr><td className="p-2 border font-semibold">Gearbox</td><td className="p-2 border">{params.model || 'Not selected'}</td><td className="p-2 border">{params.vendor || '-'}</td></tr>
+            <tr><td className="p-2 border font-semibold">Gearbox</td><td className="p-2 border">{params.gearboxModel || 'Not selected'}</td><td className="p-2 border">{params.gearboxVendor || '-'}</td></tr>
             <tr><td className="p-2 border font-semibold">Motor</td><td className="p-2 border">{params.motorModel || 'Not selected'}</td><td className="p-2 border">{params.motorVendor || '-'}</td></tr>
             <tr><td className="p-2 border font-semibold">Drive</td><td className="p-2 border">{params.driveModel || 'Not selected'}</td><td className="p-2 border">{params.driveVendor || '-'}</td></tr>
         </tbody>
@@ -38,6 +38,7 @@ const BOMView = ({ params }: { params: any }) => (
 
 export const WorkArea = () => {
   const [activeTab, setActiveTab] = useState('System Data');
+  const [sizingMetrics, setSizingMetrics] = useState<SizingMetrics | null>(null);
   
   const { data, selectedNodeId, updateNode, camTables } = useProjectStore();
   
@@ -151,6 +152,18 @@ export const WorkArea = () => {
     return findAxisProfile(data);
   }, [data, params.masterAxis]);
 
+  const totalInertia = useMemo(() => {
+    const mechInertia = parseFloat(String(params.screwInertia || params.driverInertia || params.sprocketInertia || params.pinionInertia || params.crankInertia || params.rotatingInertia || params.drivingInertia || 0)) * 0.0001; // kg·cm² to kg·m²
+    const transInertia = parseFloat(String(params.transInertia || 0)) * 0.0001;
+    const motorInertia = parseFloat(String(params.motorInertia || 0)) * 0.0001;
+    const gearboxInertia = parseFloat(String(params.gearboxInertia || 0)) * 0.0001;
+    const gearboxRatio = parseFloat(String(params.gearboxRatio || 1));
+    // Load inertia reflected through gearbox
+    const loadSideInertia = mechInertia + transInertia;
+    const reflectedLoad = gearboxRatio > 0 ? loadSideInertia / (gearboxRatio * gearboxRatio) : loadSideInertia;
+    return reflectedLoad + gearboxInertia + motorInertia;
+  }, [params]);
+
   const profileType = params.profileType || 'Time Based';
   const masterAxisFullName = String(params.masterAxis || 'Virtual Master');
   const masterAxisName = masterAxisFullName.includes('>') ? masterAxisFullName.split('>')[1].trim() : masterAxisFullName;
@@ -161,6 +174,10 @@ export const WorkArea = () => {
   // Logic to determine if we use degrees or millimeters based on AxisForm selection
   const posUnitType: UnitType = params.axisUsage === 'Linear' ? 'length' : 'angle';
   const isReadOnly = profileType !== 'Time Based';
+
+  const friction = parseFloat(String(params.kineticFriction || 0));
+  const efficiency = (parseFloat(String(params.mechanismEfficiency || 100)) / 100) * (parseFloat(String(params.gearboxEfficiency || 100)) / 100);
+  const gravityForce = 0; // Simplified for now
 
   if (selectedNode.type === 'axis') {
     const tabs = ['System Data', 'Mechanism', 'Motion Profile', 'Motor', 'Drive', 'Gearbox', 'BOM'];
@@ -189,12 +206,17 @@ export const WorkArea = () => {
                        isReadOnly={isReadOnly}
                        savedProfileData={(params.motionProfileData && String(params.motionProfileData) !== 'undefined') ? String(params.motionProfileData) : null}
                        masterProfileData={masterProfileData}
+                       totalInertia={totalInertia}
+                       onSizingMetricsChange={setSizingMetrics}
                        onProfileChange={(json) => handleUpdate({ motionProfileData: json })}
+                       friction={friction}
+                       efficiency={efficiency}
+                       gravityForce={gravityForce}
                      />
                   </div>
                 )}
-                {activeTab === 'Motor' && <MotorForm params={params} onUpdate={handleUpdate} />}
-                {activeTab === 'Drive' && <DriveForm params={params} onUpdate={handleUpdate} />}
+                {activeTab === 'Motor' && <MotorForm params={params} onUpdate={handleUpdate} sizingMetrics={sizingMetrics} />}
+                {activeTab === 'Drive' && <DriveForm params={params} onUpdate={handleUpdate} sizingMetrics={sizingMetrics} />}
                 {activeTab === 'Gearbox' && <GearboxForm params={params} onUpdate={handleUpdate} />}
                 {activeTab === 'BOM' && <BOMView params={params} />}
              </div>

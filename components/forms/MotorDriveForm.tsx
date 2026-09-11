@@ -2,8 +2,8 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Filter, AlertTriangle, ExternalLink } from 'lucide-react';
 import { UnitInput, InputGroup, Select, SectionHeader } from '../Common';
-import { motorCatalog, driveCatalog } from '../../catalogData';
-import { MotorSpec } from '../../types';
+import { getMotorCatalog, getDriveCatalog } from '../../catalogData';
+import { MotorSpec, SizingMetrics } from '../../types';
 
 const PerformanceBar = ({ 
   percent, 
@@ -45,25 +45,19 @@ const PerformanceBar = ({
 const MotorSelectionTable = ({ 
   motors, 
   selectedModel, 
-  onSelect, 
-  // Requirements exactly matching the reference image for visual consistency
-  req = {
-    ratedTorque: 7.42,
-    peakTorque: 9.7,
-    ratedSpeed: 2159,
-    peakSpeed: 2865,
-    appInertiaRatio: 5.91
-  }
+  onSelect,
+  appInertia,
+  req
 }: { 
   motors: MotorSpec[], 
   selectedModel: string, 
   onSelect: (m: MotorSpec) => void,
-  req?: {
+  appInertia: number,
+  req: {
     ratedTorque: number,
     peakTorque: number,
     ratedSpeed: number,
-    peakSpeed: number,
-    appInertiaRatio: number
+    peakSpeed: number
   }
 }) => {
   return (
@@ -92,17 +86,16 @@ const MotorSelectionTable = ({
             </tr>
           </thead>
           <tbody className="text-[11px] divide-y divide-gray-200">
-            {motors.map((motor, idx) => {
+            {motors.map((motor) => {
               const isSelected = motor.model === selectedModel;
-              const isLastRows = idx >= motors.length - 4; // To simulate "Non-Stock" in some rows like image
               
               // Calculations matching the 17 columns
               const ratedSafety = motor.ratedTorque / req.ratedTorque;
               const peakSafety = motor.peakTorque / req.peakTorque;
               const ratedSpeedUsage = (req.ratedSpeed / motor.ratedSpeed) * 100;
               const peakSpeedUsage = (req.peakSpeed / motor.peakSpeed) * 100;
-              const inertiaRatio = req.appInertiaRatio / (motor.inertia / 5.91); // Simulated app inertia ratio
-              const inertiaUsage = (inertiaRatio / motor.allowableInertiaRatio) * 100;
+              const inertiaRatio = motor.inertia > 0 ? appInertia / motor.inertia : 0; // load-to-motor inertia ratio
+              const inertiaUsage = motor.allowableInertiaRatio > 0 ? (inertiaRatio / motor.allowableInertiaRatio) * 100 : 0;
 
               return (
                 <tr 
@@ -125,25 +118,19 @@ const MotorSelectionTable = ({
                   <td className="p-1 border-r border-gray-300 px-1">
                     <PerformanceBar type="usage" percent={ratedSpeedUsage} value={`${ratedSpeedUsage.toFixed(0)}%`} />
                   </td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.ratedSpeed}</td>
+                  <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.ratedSpeed.toFixed(0)}</td>
                   <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.peakSpeed}</td>
                   <td className="p-1 border-r border-gray-300 px-1">
                     <PerformanceBar type="usage" percent={peakSpeedUsage} value={`${peakSpeedUsage.toFixed(0)}%`} />
                   </td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.peakSpeed}</td>
+                  <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.peakSpeed.toFixed(0)}</td>
                   <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.allowableInertiaRatio}</td>
                   <td className="p-1 border-r border-gray-300 px-1">
                     <PerformanceBar type="usage" percent={inertiaUsage} value={`${inertiaUsage.toFixed(0)}%`} />
                   </td>
                   <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{inertiaRatio.toFixed(3)}</td>
                   <td className="p-1 px-1">
-                    {isLastRows ? (
-                      <div className="w-full h-5 bg-[#fef9c3] border border-gray-300 flex items-center px-1.5 text-[9px] font-bold text-gray-800">
-                        Non-Stock
-                      </div>
-                    ) : (
-                      <PerformanceBar type="cost" percent={motor.costIndex * 40} value={motor.costIndex.toFixed(2)} />
-                    )}
+                    <PerformanceBar type="cost" percent={motor.costIndex * 40} value={motor.costIndex.toFixed(2)} />
                   </td>
                 </tr>
               );
@@ -159,28 +146,58 @@ export const MotorDriveForm = ({
   params, 
   onUpdate, 
   onlyMotor, 
-  onlyDrive 
+  onlyDrive,
+  sizingMetrics
 }: { 
   params: any, 
   onUpdate: (p: any) => void, 
   onlyMotor?: boolean, 
-  onlyDrive?: boolean 
+  onlyDrive?: boolean,
+  sizingMetrics?: SizingMetrics
 }) => {
   const [vendorFilter, setVendorFilter] = useState<string>('All Vendors');
   const [searchTerm, setSearchTerm] = useState('');
   
+  const motorCatalog = useMemo(() => getMotorCatalog(), []);
+  const driveCatalog = useMemo(() => getDriveCatalog(), []);
+
   const motorVendors = ['All Vendors', ...Array.from(new Set(motorCatalog.map(m => m.vendor)))];
   const driveVendors = Array.from(new Set(driveCatalog.map(d => d.vendor)));
   
+  const appInertia = useMemo(() => {
+    const mechInertia = parseFloat(params.screwInertia || params.driverInertia || params.rotatingInertia || '0');
+    const transInertia = parseFloat(params.transInertia || '0');
+    const gearboxRatio = parseFloat(params.gearboxRatio || '1');
+    const loadSideInertia = mechInertia + transInertia;
+    return gearboxRatio > 0 ? loadSideInertia / (gearboxRatio * gearboxRatio) : loadSideInertia;
+  }, [params]);
+
+  const req = useMemo(() => ({
+    ratedTorque: sizingMetrics?.rmsTorque ?? 7.42,
+    peakTorque: sizingMetrics?.peakTorque ?? 9.7,
+    ratedSpeed: sizingMetrics?.rmsSpeed ?? 2159,
+    peakSpeed: sizingMetrics?.peakSpeed ?? 2865
+  }), [sizingMetrics]);
+
   const filteredMotors = useMemo(() => {
     return motorCatalog.filter(m => {
       const matchVendor = vendorFilter === 'All Vendors' || m.vendor === vendorFilter;
       const matchSearch = m.model.toLowerCase().includes(searchTerm.toLowerCase());
       return matchVendor && matchSearch;
     });
-  }, [vendorFilter, searchTerm]);
+  }, [vendorFilter, searchTerm, motorCatalog]);
 
-  const availableDrives = driveCatalog.filter(d => d.vendor === (params.driveVendor || params.motorVendor));
+  const selectedMotor = useMemo(() => {
+    return motorCatalog.find(m => m.model === params.motorModel);
+  }, [motorCatalog, params.motorModel]);
+
+  const availableDrives = useMemo(() => {
+    let drives = driveCatalog.filter(d => d.vendor === (params.driveVendor || params.motorVendor));
+    if (selectedMotor) {
+      drives = drives.filter(d => d.maxCurrent >= selectedMotor.ratedCurrent);
+    }
+    return drives;
+  }, [driveCatalog, params.driveVendor, params.motorVendor, selectedMotor]);
 
   const handleSelectMotor = (motor: MotorSpec) => {
     onUpdate({
@@ -225,13 +242,25 @@ export const MotorDriveForm = ({
   }
 
   if (onlyDrive) {
+    const isDriveCompatible = selectedMotor && params.driveModel && driveCatalog.find(d => d.model === params.driveModel)?.maxCurrent >= selectedMotor.ratedCurrent;
     return (
       <div className="space-y-4">
         <SectionHeader title="Drive Specifications" />
+        {selectedMotor && availableDrives.length === 0 && (
+          <div className="text-red-500 text-sm flex items-center mb-2">
+            <AlertTriangle className="w-4 h-4 mr-2" />
+            No compatible drives found for the selected motor's current rating.
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-x-12">
             <div className="space-y-1">
                 <InputGroup label="Vendor"><Select value={params.driveVendor || params.motorVendor} options={driveVendors} onChange={handleDriveVendorChange} /></InputGroup>
-                <InputGroup label="Model"><Select value={params.driveModel} options={availableDrives.map(d => d.model)} onChange={handleDriveModelChange} /></InputGroup>
+                <InputGroup label="Model">
+                    <div className="flex items-center space-x-2">
+                        <Select value={params.driveModel} options={availableDrives.map(d => d.model)} onChange={handleDriveModelChange} className="flex-1" />
+                        {isDriveCompatible && <span className="text-green-600 text-xs font-semibold shrink-0">✓ Compatible</span>}
+                    </div>
+                </InputGroup>
             </div>
             <div className="space-y-1">
                 <InputGroup label="Supply Voltage"><UnitInput value={params.driveSupplyVoltage} onChange={()=>{}} type="voltage" readOnly /></InputGroup>
@@ -279,6 +308,8 @@ export const MotorDriveForm = ({
         motors={filteredMotors} 
         selectedModel={params.motorModel} 
         onSelect={handleSelectMotor}
+        appInertia={appInertia}
+        req={req}
       />
 
       {/* Selected Component Status Bar */}
@@ -289,19 +320,19 @@ export const MotorDriveForm = ({
           </div>
           <div className="flex flex-col border-l border-gray-300 pl-3">
              <span className="text-[9px] text-gray-500 font-bold uppercase">Rated Torque</span>
-             <span className="text-[11px] font-mono font-bold">{(params.ratedTorque || 0).toFixed(2)} Nm</span>
+             <span className={`text-[11px] font-mono font-bold ${params.motorModel ? (params.ratedTorque >= req.ratedTorque ? 'text-green-600' : 'text-red-600') : ''}`}>{(params.ratedTorque || 0).toFixed(2)} Nm</span>
           </div>
           <div className="flex flex-col border-l border-gray-300 pl-3">
              <span className="text-[9px] text-gray-500 font-bold uppercase">Peak Torque</span>
-             <span className="text-[11px] font-mono font-bold">{(params.peakTorque || 0).toFixed(1)} Nm</span>
+             <span className={`text-[11px] font-mono font-bold ${params.motorModel ? (params.peakTorque >= req.peakTorque ? 'text-green-600' : 'text-red-600') : ''}`}>{(params.peakTorque || 0).toFixed(1)} Nm</span>
           </div>
           <div className="flex flex-col border-l border-gray-300 pl-3">
              <span className="text-[9px] text-gray-500 font-bold uppercase">Rated Speed</span>
-             <span className="text-[11px] font-mono font-bold">{(params.ratedSpeed || 0)} RPM</span>
+             <span className={`text-[11px] font-mono font-bold ${params.motorModel ? (params.ratedSpeed >= req.ratedSpeed ? 'text-green-600' : 'text-red-600') : ''}`}>{(params.ratedSpeed || 0)} RPM</span>
           </div>
           <div className="flex flex-col border-l border-gray-300 pl-3">
              <span className="text-[9px] text-gray-500 font-bold uppercase">Inertia Ratio Limit</span>
-             <span className="text-[11px] font-mono font-bold">{(params.allowableInertiaRatio || 0)}:1</span>
+             <span className={`text-[11px] font-mono font-bold ${params.motorModel ? (appInertia / (params.motorInertia || 1) <= (params.allowableInertiaRatio || 0) ? 'text-green-600' : 'text-red-600') : ''}`}>{(params.allowableInertiaRatio || 0)}:1</span>
           </div>
       </div>
     </div>
