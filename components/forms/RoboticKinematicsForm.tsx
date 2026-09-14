@@ -113,23 +113,31 @@ export const RoboticKinematicsForm = ({ params, onUpdate, groupNode }: { params:
           </div>
         ) : (
           <div className="space-y-3 bg-white p-4 border border-gray-200 rounded">
-            {config.joints.map((joint, idx) => (
-              <div key={idx} className="flex items-center space-x-4">
-                <div className="w-1/3 text-sm font-medium text-gray-700 text-right">{joint}</div>
-                <div className="w-2/3">
-                  <select 
-                    className="w-full border border-gray-300 rounded p-1 text-sm bg-white"
-                    value={jointMapping[joint] || ''}
-                    onChange={(e) => handleMappingChange(joint, e.target.value)}
-                  >
-                    <option value="">-- Unassigned --</option>
-                    {axes.map(axis => (
-                      <option key={axis.id} value={axis.id}>{axis.label}</option>
-                    ))}
-                  </select>
+            {config.joints.map((joint, idx) => {
+              // Create a list of axes that are either currently assigned to THIS joint, or not assigned to ANY joint.
+              const assignedAxisIds = Object.values(jointMapping).filter(Boolean);
+              const availableAxes = axes.filter(axis => 
+                !assignedAxisIds.includes(axis.id) || jointMapping[joint] === axis.id
+              );
+
+              return (
+                <div key={idx} className="flex items-center space-x-4">
+                  <div className="w-1/3 text-sm font-medium text-gray-700 text-right">{joint}</div>
+                  <div className="w-2/3">
+                    <select 
+                      className="w-full border border-gray-300 rounded p-1 text-sm bg-white"
+                      value={jointMapping[joint] || ''}
+                      onChange={(e) => handleMappingChange(joint, e.target.value)}
+                    >
+                      <option value="">-- Unassigned --</option>
+                      {availableAxes.map(axis => (
+                        <option key={axis.id} value={axis.id}>{axis.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
