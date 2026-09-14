@@ -1,44 +1,287 @@
-import React from 'react';
-import { ArrowLeft, ArrowRight, HelpCircle, FileText } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Settings, Zap, List, Activity, Check, Wand2 } from 'lucide-react';
+import { useProjectStore } from '../store/useProjectStore';
 
-const WizardButton = ({ label, icon }: { label: string, icon: React.ReactNode }) => (
-  <button className="flex flex-col items-center justify-center p-1 px-2 border border-gray-300 bg-gray-100 hover:bg-gray-200 rounded shadow-sm text-xs min-w-[60px]">
-    <div className="mb-0.5 text-gray-700">{icon}</div>
-    <span>{label}</span>
+const WizardButton = ({ label, icon, onClick, disabled, primary }: { label: string, icon?: React.ReactNode, onClick: () => void, disabled?: boolean, primary?: boolean }) => (
+  <button 
+    onClick={onClick}
+    disabled={disabled}
+    className={`flex items-center justify-center p-2 px-4 border rounded shadow-sm text-sm font-medium ${
+      disabled ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-300 text-gray-500' :
+      primary ? 'bg-blue-600 hover:bg-blue-700 border-blue-700 text-white' : 
+      'bg-white hover:bg-gray-50 border-gray-300 text-gray-700'
+    }`}
+  >
+    {icon && <span className="mr-2">{icon}</span>}
+    {label}
   </button>
 );
 
 export const WizardPanel = () => {
+  const { addWizardAxis, setIsWizardOpen } = useProjectStore();
+  const [currentStep, setCurrentStep] = useState(0);
+  
+  const [data, setData] = useState({
+    axisName: 'Wizard Axis',
+    axisUsage: 'Linear',
+    mechanismType: 'Ball Screw',
+    massLoad: '50',
+    distance: '200',
+    duration: '1'
+  });
+
+  const updateData = (k: string, v: string) => setData(prev => ({ ...prev, [k]: v }));
+
+  const handleNext = () => { if (currentStep < 4) setCurrentStep(currentStep + 1); };
+  const handlePrev = () => { if (currentStep > 0) setCurrentStep(currentStep - 1); };
+
+  const handleFinish = () => {
+    const dist = parseFloat(data.distance) || 200;
+    const dur = parseFloat(data.duration) || 1;
+    
+    addWizardAxis({
+      axisUsage: data.axisUsage,
+      mechanismType: data.mechanismType,
+      massLoad: parseFloat(data.massLoad) || 50,
+      profileType: 'Time Based',
+      motionProfileData: JSON.stringify([{
+        id: crypto.randomUUID(),
+        type: "Accel/Decel",
+        duration: dur,
+        distance: dist,
+        velocity: (dist / dur) * 2,
+        accel: 0, decel: 0, jerk: 0, payload: parseFloat(data.massLoad) || 50,
+        calcTarget: "velocity"
+      }])
+    });
+    setIsWizardOpen(false);
+  };
+
+  const steps = [
+    { title: 'Welcome', icon: <Zap size={24} className="text-purple-600" /> },
+    { title: 'Axis Definition', icon: <Settings size={24} className="text-blue-600" /> },
+    { title: 'Mechanism', icon: <List size={24} className="text-orange-600" /> },
+    { title: 'Motion Profile', icon: <Activity size={24} className="text-red-600" /> },
+    { title: 'Finish', icon: <CheckCircle2 size={24} className="text-green-600" /> }
+  ];
+
   return (
-    <div className="w-64 bg-white border-l border-gray-300 h-full flex flex-col shrink-0 shadow-[-2px_0_5px_rgba(0,0,0,0.05)]">
+    <div className="flex flex-col h-full w-full bg-gray-50 text-gray-800 font-sans">
       {/* Header */}
-      <div className="bg-gradient-to-r from-gray-200 to-gray-100 px-2 py-1 border-b border-gray-300 flex justify-between items-center">
-        <span className="text-xs font-bold text-gray-700">EasySize Wizard</span>
-        <div className="transform rotate-45 text-gray-400">📌</div>
+      <div className="bg-white border-b border-gray-200 p-4 flex items-center shadow-sm shrink-0">
+        <div className="bg-purple-100 p-2 rounded-full mr-4">
+          <Wand2 size={28} className="text-purple-600" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">EasySize Wizard</h2>
+          <p className="text-sm text-gray-500">Step {currentStep + 1} of {steps.length}: {steps[currentStep].title}</p>
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 p-3 overflow-y-auto">
-        <h3 className="text-sm font-semibold text-gray-800 mb-2">Start</h3>
-        <p className="text-xs text-gray-600 leading-relaxed mb-4">
-          The EasySize Wizard provides step-by-step instructions for setting up your project. At any time, you can launch the wizard, jump to any step or exit the wizard.
-        </p>
-      </div>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <div className="w-64 bg-white border-r border-gray-200 p-4 hidden md:block overflow-y-auto">
+          <ul className="space-y-2">
+            {steps.map((s, i) => (
+              <li key={i} className={`flex items-center p-3 rounded-lg border ${
+                currentStep === i ? 'bg-blue-50 border-blue-200 shadow-sm' : 
+                currentStep > i ? 'bg-white border-transparent text-gray-400' : 'bg-white border-transparent text-gray-400 opacity-50'
+              }`}>
+                <div className="mr-3">{currentStep > i ? <CheckCircle2 size={24} className="text-green-500" /> : s.icon}</div>
+                <span className={`font-medium ${currentStep === i ? 'text-blue-800' : ''}`}>{s.title}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
 
-      {/* Tip Box */}
-      <div className="p-3 bg-yellow-50 border-t border-b border-yellow-100 mb-auto">
-        <h4 className="text-xs font-bold text-gray-700 mb-1">Tip</h4>
-        <p className="text-[11px] text-gray-600">
-          Press F1 or click the help button to open the help file at the appropriate topic.
-        </p>
+        {/* Content Area */}
+        <div className="flex-1 p-8 overflow-y-auto bg-white flex flex-col items-center">
+          {currentStep === 0 && (
+            <div className="w-full max-w-xl">
+              <h3 className="text-2xl font-light text-gray-800 mb-6">Welcome to EasySize</h3>
+              <p className="text-gray-600 mb-4 text-lg">
+                This wizard will guide you through the process of sizing a new axis in just a few clicks.
+              </p>
+              <ul className="space-y-3 text-gray-600 mb-8 list-disc pl-5">
+                <li>Define your axis name and type</li>
+                <li>Select your mechanism and load</li>
+                <li>Set up a basic motion profile</li>
+                <li>Automatically generate the axis in your project</li>
+              </ul>
+              <div className="p-4 bg-blue-50 text-blue-800 rounded-lg border border-blue-100">
+                <p><strong>Tip:</strong> You can always refine these parameters later in the main interface.</p>
+              </div>
+            </div>
+          )}
+
+          {currentStep === 1 && (
+            <div className="w-full max-w-xl space-y-6">
+              <h3 className="text-2xl font-light text-gray-800 mb-6">Axis Definition</h3>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Axis Name</label>
+                <input 
+                  type="text" 
+                  value={data.axisName} 
+                  onChange={e => updateData('axisName', e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Axis Usage (Motion Type)</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div 
+                    onClick={() => updateData('axisUsage', 'Linear')}
+                    className={`p-4 border rounded-lg cursor-pointer text-center ${data.axisUsage === 'Linear' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    <div className="font-bold mb-1">Linear</div>
+                    <div className="text-xs text-gray-500">Straight line motion (mm)</div>
+                  </div>
+                  <div 
+                    onClick={() => updateData('axisUsage', 'Rotary')}
+                    className={`p-4 border rounded-lg cursor-pointer text-center ${data.axisUsage === 'Rotary' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    <div className="font-bold mb-1">Rotary</div>
+                    <div className="text-xs text-gray-500">Rotational motion (deg)</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {currentStep === 2 && (
+            <div className="w-full max-w-xl space-y-6">
+              <h3 className="text-2xl font-light text-gray-800 mb-6">Mechanism</h3>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mechanism Type</label>
+                <select 
+                  value={data.mechanismType}
+                  onChange={e => updateData('mechanismType', e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded outline-none"
+                >
+                  {data.axisUsage === 'Linear' ? (
+                    <>
+                      <option value="Ball Screw">Ball Screw</option>
+                      <option value="Belt & Pulley">Belt & Pulley</option>
+                      <option value="Rack & Pinion">Rack & Pinion</option>
+                      <option value="Conveyor">Conveyor</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="Rotary Table">Rotary Table</option>
+                      <option value="Roll Feed">Roll Feed</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Total Mass Load (kg)</label>
+                <input 
+                  type="number" 
+                  value={data.massLoad} 
+                  onChange={e => updateData('massLoad', e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded outline-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {currentStep === 3 && (
+            <div className="w-full max-w-xl space-y-6">
+              <h3 className="text-2xl font-light text-gray-800 mb-6">Motion Profile</h3>
+              <p className="text-sm text-gray-600 mb-4">Let's create a basic point-to-point movement. The wizard will automatically generate a triangular acceleration profile.</p>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Movement Distance ({data.axisUsage === 'Linear' ? 'mm' : 'deg'})</label>
+                <input 
+                  type="number" 
+                  value={data.distance} 
+                  onChange={e => updateData('distance', e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Movement Duration (seconds)</label>
+                <input 
+                  type="number" 
+                  value={data.duration} 
+                  onChange={e => updateData('duration', e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded outline-none"
+                  step="0.1"
+                />
+              </div>
+            </div>
+          )}
+
+          {currentStep === 4 && (
+            <div className="w-full max-w-xl space-y-6">
+              <h3 className="text-2xl font-light text-gray-800 mb-6">Ready to Generate</h3>
+              
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 space-y-4">
+                <div className="flex justify-between border-b pb-2">
+                  <span className="text-gray-500">Axis Name:</span>
+                  <span className="font-semibold text-gray-800">{data.axisName}</span>
+                </div>
+                <div className="flex justify-between border-b pb-2">
+                  <span className="text-gray-500">Motion Type:</span>
+                  <span className="font-semibold text-gray-800">{data.axisUsage}</span>
+                </div>
+                <div className="flex justify-between border-b pb-2">
+                  <span className="text-gray-500">Mechanism:</span>
+                  <span className="font-semibold text-gray-800">{data.mechanismType}</span>
+                </div>
+                <div className="flex justify-between border-b pb-2">
+                  <span className="text-gray-500">Load:</span>
+                  <span className="font-semibold text-gray-800">{data.massLoad} kg</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Profile:</span>
+                  <span className="font-semibold text-gray-800">{data.distance} {data.axisUsage === 'Linear' ? 'mm' : 'deg'} in {data.duration}s</span>
+                </div>
+              </div>
+
+              <div className="p-4 bg-green-50 text-green-800 rounded-lg border border-green-200 flex items-center">
+                <Check className="mr-2" size={20} />
+                <span>Click Finish to create the axis and perform motor sizing.</span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Footer Nav */}
-      <div className="p-2 bg-gray-50 border-t border-gray-300 grid grid-cols-4 gap-1">
-         <WizardButton label="Go to" icon={<FileText size={16} className="text-blue-600" />} />
-         <WizardButton label="Previous" icon={<ArrowLeft size={16} className="text-green-700" />} />
-         <WizardButton label="Next" icon={<ArrowRight size={16} className="text-green-700" />} />
-         <WizardButton label="Help" icon={<HelpCircle size={16} className="text-blue-600" />} />
+      <div className="bg-white border-t border-gray-200 p-4 flex justify-between shrink-0">
+        <WizardButton 
+          label="Cancel" 
+          onClick={() => setIsWizardOpen(false)} 
+        />
+        <div className="flex space-x-3">
+          <WizardButton 
+            label="Previous" 
+            icon={<ArrowLeft size={16} />} 
+            onClick={handlePrev} 
+            disabled={currentStep === 0} 
+          />
+          {currentStep < steps.length - 1 ? (
+            <WizardButton 
+              label="Next" 
+              icon={<ArrowRight size={16} />} 
+              onClick={handleNext} 
+              primary 
+            />
+          ) : (
+            <WizardButton 
+              label="Finish" 
+              icon={<CheckCircle2 size={16} />} 
+              onClick={handleFinish} 
+              primary 
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -53,6 +53,7 @@ interface ProjectState {
   toggleNode: (id: string) => void;
   updateNode: (id: string, newParams: Record<string, any>) => void;
   addAxis: () => void;
+  addWizardAxis: (axisParams: Record<string, any>) => void;
   addGroup: () => void;
   deleteNode: () => void;
   pasteNode: (targetId: string | null) => void;
@@ -219,6 +220,30 @@ export const useProjectStore = create<ProjectState>()(
         targetGroup.expanded = true;
       }
     }),
+
+    addWizardAxis: (params) => set((state) => {
+      state.saveHistoryState();
+      let targetGroup = state.data.find((n: any) => n.type === 'group') || state.data[0];
+      if (targetGroup && targetGroup.children) {
+        const count = targetGroup.children.filter((c: any) => c.type === 'axis').length + 1;
+        const axisLabel = params.axisName || `Axis ${count}`;
+        const newAxis: TreeNode = {
+          id: `axis_${crypto.randomUUID()}`,
+          label: axisLabel,
+          icon: 'axis',
+          type: 'axis',
+          parameters: {
+             axisName: axisLabel,
+             gearRatioNum: 1,
+             gearRatioDen: 1,
+             ...params
+          }
+        };
+        targetGroup.children.push(newAxis);
+        targetGroup.expanded = true;
+      }
+    }),
+
 
     addGroup: () => set((state) => {
       state.saveHistoryState();
