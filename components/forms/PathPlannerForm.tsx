@@ -39,20 +39,26 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
   };
 
   const cycleEstimation = useMemo(() => {
-    if (pathData.length < 2) return { time: 0, segments: [] };
+    if (pathData.length < 2) return { time: 0, segments: [], actualBlends: [] };
+    
+    const dist3D = (p1: any, p2: any) => Math.sqrt(((p1.x||0)-(p2.x||0))**2 + ((p1.y||0)-(p2.y||0))**2 + ((p1.z||0)-(p2.z||0))**2);
     
     let totalTime = 0;
     const segments = [];
+
+    // Precalculate mathematically valid blend radii
+    const actualBlends = pathData.map((p: any, i: number) => {
+      if (i === 0 || i === pathData.length - 1) return 0;
+      const d1 = dist3D(pathData[i-1], p);
+      const d2 = dist3D(p, pathData[i+1]);
+      return Math.min(parseFloat(p.blend) || 0, d1 / 2, d2 / 2);
+    });
 
     for (let i = 1; i < pathData.length; i++) {
       const p0 = pathData[i - 1];
       const p1 = pathData[i];
       
-      const dx = (p1.x || 0) - (p0.x || 0);
-      const dy = (p1.y || 0) - (p0.y || 0);
-      const dz = (p1.z || 0) - (p0.z || 0);
-      // Rough estimation using translational distance primarily
-      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 0.1; // avoid division by zero
+      const dist = dist3D(p0, p1) || 0.1;
       
       const v = parseFloat(p1.vel) || 500;
       const a = parseFloat(p1.acc) || 2000;
@@ -71,10 +77,10 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
         }
       }
       
-      const blend = parseFloat(p1.blend) || 0;
+      const actualBlend = actualBlends[i];
       let blendSavings = 0;
-      if (blend > 0 && i < pathData.length - 1 && v > 0) {
-         blendSavings = (blend / v); 
+      if (actualBlend > 0 && v > 0) {
+         blendSavings = (actualBlend / v); 
       }
       
       moveTime = Math.max(0.01, moveTime - blendSavings);
@@ -84,7 +90,7 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
       segments.push({ moveTime, dwell });
     }
     
-    return { time: totalTime, segments };
+    return { time: totalTime, segments, actualBlends };
   }, [pathData]);
 
   const handleBuildProfiles = () => {
@@ -209,11 +215,20 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
                     <td className="p-1"><input type="number" value={p.ry || 0} onChange={(e) => updatePoint(p.id, 'ry', Number(e.target.value))} className="w-10 border p-1 rounded text-[10px] text-center mx-auto block text-gray-500 bg-transparent hover:bg-white" /></td>
                     <td className="p-1 border-r"><input type="number" value={p.rz || 0} onChange={(e) => updatePoint(p.id, 'rz', Number(e.target.value))} className="w-10 border p-1 rounded text-[10px] text-center mx-auto block text-gray-500 bg-transparent hover:bg-white" /></td>
                     
-                    <td className="p-1 bg-blue-50/20"><input type="number" value={p.vel} onChange={(e) => updatePoint(p.id, 'vel', Number(e.target.value))} className="w-14 border border-blue-200 p-1 rounded text-xs text-center mx-auto block bg-white" disabled={idx === 0} /></td>
-                    <td className="p-1 bg-blue-50/20 border-r"><input type="number" value={p.acc} onChange={(e) => updatePoint(p.id, 'acc', Number(e.target.value))} className="w-14 border border-blue-200 p-1 rounded text-xs text-center mx-auto block bg-white" disabled={idx === 0} /></td>
+                    <td className="p-1 bg-blue-50/20"><input type="number" min="0" value={p.vel} onChange={(e) => updatePoint(p.id, 'vel', Math.max(0, Number(e.target.value)))} className="w-14 border border-blue-200 p-1 rounded text-xs text-center mx-auto block bg-white" disabled={idx === 0} /></td>
+                    <td className="p-1 bg-blue-50/20 border-r"><input type="number" min="0" value={p.acc} onChange={(e) => updatePoint(p.id, 'acc', Math.max(0, Number(e.target.value)))} className="w-14 border border-blue-200 p-1 rounded text-xs text-center mx-auto block bg-white" disabled={idx === 0} /></td>
                     
-                    <td className="p-1 bg-orange-50/20"><input type="number" value={p.blend} onChange={(e) => updatePoint(p.id, 'blend', Number(e.target.value))} className="w-12 border border-orange-200 p-1 rounded text-xs text-center mx-auto block bg-white" /></td>
-                    <td className="p-1 bg-green-50/20 border-r"><input type="number" value={p.dwell} onChange={(e) => updatePoint(p.id, 'dwell', Number(e.target.value))} className="w-14 border border-green-200 p-1 rounded text-xs text-center mx-auto block bg-white" /></td>
+                    <td className={`p-1 ${idx > 0 && idx < pathData.length - 1 && p.blend > cycleEstimation.actualBlends[idx] ? 'bg-red-50' : 'bg-orange-50/20'}`}>
+                      <input 
+                        type="number" 
+                        min="0"
+                        value={p.blend} 
+                        onChange={(e) => updatePoint(p.id, 'blend', Math.max(0, Number(e.target.value)))} 
+                        className={`w-12 border p-1 rounded text-xs text-center mx-auto block bg-white ${(idx > 0 && idx < pathData.length - 1 && p.blend > cycleEstimation.actualBlends[idx]) ? 'border-red-400 text-red-600 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-orange-200'}`} 
+                        title={(idx > 0 && idx < pathData.length - 1 && p.blend > cycleEstimation.actualBlends[idx]) ? `Max allowed blend is ${cycleEstimation.actualBlends[idx].toFixed(1)} mm` : ''}
+                      />
+                    </td>
+                    <td className="p-1 bg-green-50/20 border-r"><input type="number" min="0" value={p.dwell} onChange={(e) => updatePoint(p.id, 'dwell', Math.max(0, Number(e.target.value)))} className="w-14 border border-green-200 p-1 rounded text-xs text-center mx-auto block bg-white" /></td>
                     
                     <td className="p-1 text-center">
                       <button onClick={() => removePoint(p.id)} className="text-red-400 hover:text-red-600 p-1 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
