@@ -16,6 +16,7 @@ import { GearboxForm } from './forms/GearboxForm';
 import { MotorDriveForm } from './forms/MotorDriveForm';
 import { AxisForm } from './forms/AxisForm';
 import { RoboticKinematicsForm } from './forms/RoboticKinematicsForm';
+import { PathPlannerForm } from './forms/PathPlannerForm';
 
 const MotorForm = (props: any) => <MotorDriveForm {...props} onlyMotor={true} />;
 const DriveForm = (props: any) => <MotorDriveForm {...props} onlyDrive={true} />;
@@ -229,7 +230,7 @@ export const WorkArea = () => {
     );
   }
 
-  const groupTabs = params.configuration === 'Robotic' ? ['Configuration', 'Robotic Kinematics'] : ['Configuration'];
+  const groupTabs = params.configuration === 'Robotic' ? ['Configuration', 'Robotic Kinematics', 'Path Planner'] : ['Configuration'];
 
   return (
     <div className="flex-1 flex flex-col h-full bg-win-bg overflow-hidden">
@@ -246,6 +247,10 @@ export const WorkArea = () => {
           
           {activeGroupTab === 'Robotic Kinematics' && params.configuration === 'Robotic' && (
             <RoboticKinematicsForm params={params} onUpdate={handleUpdate} groupNode={selectedNode} />
+          )}
+
+          {activeGroupTab === 'Path Planner' && params.configuration === 'Robotic' && (
+            <PathPlannerForm params={params} onUpdate={handleUpdate} groupNode={selectedNode} />
           )}
         </div>
       </div>
