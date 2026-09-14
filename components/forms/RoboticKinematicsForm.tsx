@@ -1,23 +1,169 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Select } from '../Common';
 import { TreeNode } from '../../types';
+import { Plus, X } from 'lucide-react';
+
+interface DynAxis {
+  id: string;
+  type: 'main' | 'prime' | 'aux';
+  logicalJoint: string;
+  physicalAxisId: string;
+  isFixed?: boolean;
+}
+
+const DynamicKinematicsBuilder = ({ params, onUpdate, axes, robotType, currentDof, config }: { params: any, onUpdate: (p: any) => void, axes: TreeNode[], robotType: string, currentDof: number, config: any }) => {
+  const configList: DynAxis[] = params.dynamicAxes || [];
+
+  // Initialize or re-initialize dynamicAxes when robot type or DOF changes
+  useEffect(() => {
+    if (params._lastRobotType !== robotType || params._lastDof !== currentDof) {
+      const joints = config.getJoints(currentDof);
+      const initialAxes: DynAxis[] = joints.map((j: string) => ({
+        id: crypto.randomUUID(),
+        type: 'main',
+        logicalJoint: j,
+        physicalAxisId: '',
+        isFixed: true
+      }));
+      onUpdate({ dynamicAxes: initialAxes, _lastRobotType: robotType, _lastDof: currentDof });
+    }
+  }, [robotType, currentDof]);
+
+  if (params._lastRobotType !== robotType || params._lastDof !== currentDof) {
+    return null; // Wait for useEffect to sync state before rendering
+  }
+
+  const updateList = (newList: DynAxis[]) => {
+    onUpdate({ dynamicAxes: newList });
+  };
+
+  const addAxis = (type: 'main' | 'prime' | 'aux', logicalJoint: string = 'J1 (X)', parentIndex?: number) => {
+    const newAxis: DynAxis = {
+      id: crypto.randomUUID(),
+      type,
+      logicalJoint,
+      physicalAxisId: '',
+      isFixed: false
+    };
+
+    if (type === 'prime' && parentIndex !== undefined) {
+      const newList = [...configList];
+      newList.splice(parentIndex + 1, 0, newAxis);
+      updateList(newList);
+    } else {
+      updateList([...configList, newAxis]);
+    }
+  };
+
+  const removeAxis = (id: string) => {
+    updateList(configList.filter(a => a.id !== id));
+  };
+
+  const updateAxis = (id: string, field: keyof DynAxis, value: any) => {
+    let newList = [...configList];
+    const index = newList.findIndex(a => a.id === id);
+    if (index === -1) return;
+    
+    const oldLogical = newList[index].logicalJoint;
+    newList[index] = { ...newList[index], [field]: value };
+    
+    if (field === 'logicalJoint' && newList[index].type === 'main') {
+      for (let i = index + 1; i < newList.length; i++) {
+        if (newList[i].type === 'prime' && newList[i].logicalJoint === oldLogical) {
+          newList[i] = { ...newList[i], logicalJoint: value };
+        } else if (newList[i].type !== 'prime') {
+          break;
+        }
+      }
+    }
+    
+    updateList(newList);
+  };
+
+  const getAvailableAxes = (currentId: string) => {
+    const assigned = configList.map(a => a.physicalAxisId).filter(Boolean);
+    return axes.filter(ax => !assigned.includes(ax.id) || currentId === ax.id);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-gray-200 rounded p-4 space-y-3">
+        {configList.map((ax, idx) => (
+          <div key={ax.id} className={`flex items-center space-x-2 ${ax.type === 'prime' ? 'pl-8 border-l-2 border-blue-200' : ''} ${ax.type === 'aux' ? 'bg-gray-50 p-2 rounded' : ''}`}>
+            
+            <div className="w-32 shrink-0">
+              {ax.type === 'prime' ? (
+                <div className="text-xs font-bold text-gray-500">{ax.logicalJoint}' (Prime)</div>
+              ) : ax.type === 'aux' ? (
+                <div className="text-xs font-bold text-gray-500">Auxiliary</div>
+              ) : (
+                <div className="text-sm font-medium text-gray-700">{ax.logicalJoint}</div>
+              )}
+            </div>
+
+            <div className="flex-1">
+              <select 
+                className="w-full border border-gray-300 rounded p-1 text-sm bg-white"
+                value={ax.physicalAxisId}
+                onChange={(e) => updateAxis(ax.id, 'physicalAxisId', e.target.value)}
+              >
+                <option value="">-- Assign Physical Axis --</option>
+                {getAvailableAxes(ax.physicalAxisId).map(a => (
+                  <option key={a.id} value={a.id}>{a.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {ax.type === 'main' && (
+              <button 
+                onClick={() => addAxis('prime', ax.logicalJoint, idx)}
+                className="p-1 hover:bg-blue-50 text-blue-600 rounded"
+                title="Add Prime (Slave) Axis"
+              >
+                <Plus size={16} />
+              </button>
+            )}
+
+            {!ax.isFixed && (
+              <button 
+                onClick={() => removeAxis(ax.id)}
+                className="p-1 hover:bg-red-50 text-red-500 rounded"
+                title="Remove Axis"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex space-x-2">
+        <button 
+          onClick={() => addAxis('aux', 'Aux')}
+          className="flex-1 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-xs font-medium text-gray-700"
+        >
+          Add Auxiliary Axis
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export const RoboticKinematicsForm = ({ params, onUpdate, groupNode }: { params: any, onUpdate: (p: any) => void, groupNode: TreeNode }) => {
   const robotType = params.robotType || 'Scara';
-  const dof = params.dof; // undefined means use default
-  const jointMapping = params.jointMapping || {};
+  const dof = params.dof;
 
   const handleRobotTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onUpdate({ robotType: e.target.value, dof: undefined, jointMapping: {} });
+    onUpdate({ robotType: e.target.value, dof: undefined });
   };
 
   const handleDofChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onUpdate({ dof: Number(e.target.value), jointMapping: {} });
+    onUpdate({ dof: Number(e.target.value) });
   };
 
   const axes = groupNode.children?.filter(c => c.type === 'axis') || [];
 
-  const robotConfigs: Record<string, { allowedDof?: number[], defaultDof?: number, getJoints: (d: number) => string[], image: React.ReactNode, desc: string }> = {
+  const robotConfigs: Record<string, { allowedDof?: number[], defaultDof?: number, isDynamic?: boolean, getJoints: (d: number) => string[], image: React.ReactNode, desc: string }> = {
     'Scara': {
       getJoints: () => ['J1 (Shoulder)', 'J2 (Elbow)', 'J3 (Z-Axis)', 'J4 (Roll)'],
       desc: 'Selective Compliance Assembly Robot Arm. Excellent for fast pick and place.',
@@ -43,10 +189,13 @@ export const RoboticKinematicsForm = ({ params, onUpdate, groupNode }: { params:
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-1 fill-none"><polygon points="30,80 70,80 80,40 20,40" /><line x1="30" y1="80" x2="50" y2="20" /><line x1="70" y1="80" x2="50" y2="20" /></svg>
     },
     'Gantry': {
-      getJoints: () => ['X-Axis', 'Y-Axis', 'Z-Axis'],
-      desc: 'Cartesian coordinate robot operating on a gantry structure.',
+      allowedDof: [2, 3, 4, 5, 6],
+      defaultDof: 3,
+      getJoints: (d) => ['J1 (X)', 'J2 (Y)', 'J3 (Z)', 'J4 (Rx)', 'J5 (Ry)', 'J6 (Rz)'].slice(0, d),
+      desc: 'Cartesian coordinate robot operating on a gantry structure. Supports dynamic prime (slave) and auxiliary axes.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><rect x="10" y="10" width="80" height="80" /><line x1="10" y1="30" x2="90" y2="30" /><circle cx="50" cy="30" r="4" /></svg>
     },
+
     'H-Bot': {
       getJoints: () => ['Motor A', 'Motor B'],
       desc: 'XY planar robot utilizing a single continuous belt.',
@@ -57,16 +206,7 @@ export const RoboticKinematicsForm = ({ params, onUpdate, groupNode }: { params:
       desc: 'CoreXY variant forming a T-shape belt routing.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><path d="M20 20 L80 20 L50 80 Z" /></svg>
     },
-    'Cartesian 2D': {
-      getJoints: () => ['X-Axis', 'Y-Axis'],
-      desc: 'Simple 2-axis linear system (XY or XZ).',
-      image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><line x1="20" y1="80" x2="80" y2="80" /><line x1="20" y1="80" x2="20" y2="20" /></svg>
-    },
-    'Cartesian 3D': {
-      getJoints: () => ['X-Axis', 'Y-Axis', 'Z-Axis'],
-      desc: 'Standard 3-axis linear system.',
-      image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><line x1="50" y1="50" x2="20" y2="80" /><line x1="50" y1="50" x2="90" y2="50" /><line x1="50" y1="50" x2="50" y2="10" /></svg>
-    },
+
     'Articulated (6 DOF)': {
       getJoints: () => ['J1 (Base)', 'J2 (Shoulder)', 'J3 (Elbow)', 'J4 (Pitch)', 'J5 (Yaw)', 'J6 (Roll)'],
       desc: 'Standard 6-axis industrial robot arm.',
@@ -88,9 +228,7 @@ export const RoboticKinematicsForm = ({ params, onUpdate, groupNode }: { params:
   const currentDof = dof ?? (config.defaultDof || config.getJoints(0).length);
   const activeJoints = config.getJoints(currentDof);
 
-  const handleMappingChange = (joint: string, axisId: string) => {
-    onUpdate({ jointMapping: { ...jointMapping, [joint]: axisId } });
-  };
+
 
   return (
     <div className="flex space-x-6 h-full p-4">
@@ -141,33 +279,14 @@ export const RoboticKinematicsForm = ({ params, onUpdate, groupNode }: { params:
             There are no axes in this group. Add axes to map them to robot joints.
           </div>
         ) : (
-          <div className="space-y-3 bg-white p-4 border border-gray-200 rounded">
-            {activeJoints.map((joint, idx) => {
-              // Create a list of axes that are either currently assigned to THIS joint, or not assigned to ANY joint.
-              const assignedAxisIds = Object.values(jointMapping).filter(Boolean);
-              const availableAxes = axes.filter(axis => 
-                !assignedAxisIds.includes(axis.id) || jointMapping[joint] === axis.id
-              );
-
-              return (
-                <div key={idx} className="flex items-center space-x-4">
-                  <div className="w-1/3 text-sm font-medium text-gray-700 text-right">{joint}</div>
-                  <div className="w-2/3">
-                    <select 
-                      className="w-full border border-gray-300 rounded p-1 text-sm bg-white"
-                      value={jointMapping[joint] || ''}
-                      onChange={(e) => handleMappingChange(joint, e.target.value)}
-                    >
-                      <option value="">-- Unassigned --</option>
-                      {availableAxes.map(axis => (
-                        <option key={axis.id} value={axis.id}>{axis.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <DynamicKinematicsBuilder 
+            params={params} 
+            onUpdate={onUpdate} 
+            axes={axes} 
+            robotType={robotType}
+            currentDof={currentDof}
+            config={config}
+          />
         )}
       </div>
     </div>
