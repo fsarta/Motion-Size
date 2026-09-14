@@ -16,6 +16,12 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
 
   const pathData = params.pathPlannerData || defaultPath;
 
+  const [speedOverride, setSpeedOverride] = useState(100);
+  const [tcpOffset, setTcpOffset] = useState({ x: 0, y: 0, z: 0 });
+  const [payload, setPayload] = useState(0);
+  const [envelope, setEnvelope] = useState({ x: 500, y: 500, z: 500 });
+  const [scrubTime, setScrubTime] = useState(0);
+
   const updatePath = (newData: any[]) => {
     onUpdate({ pathPlannerData: newData });
   };
@@ -60,8 +66,12 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
       
       const dist = dist3D(p0, p1) || 0.1;
       
-      const v = parseFloat(p1.vel) || 500;
-      const a = parseFloat(p1.acc) || 2000;
+      const rawV = parseFloat(p1.vel) || 500;
+      const rawA = parseFloat(p1.acc) || 2000;
+      
+      const overrideRatio = speedOverride / 100;
+      const v = Math.max(0.1, rawV * overrideRatio);
+      const a = Math.max(0.1, rawA * overrideRatio);
       const dwell = parseFloat(p1.dwell) || 0;
       
       let moveTime = 0;
@@ -91,7 +101,7 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
     }
     
     return { time: totalTime, segments, actualBlends };
-  }, [pathData]);
+  }, [pathData, speedOverride]);
 
   const handleBuildProfiles = () => {
     if (!params.jointMapping || Object.keys(params.jointMapping).length === 0) {
@@ -123,7 +133,7 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
             duration: Number(seg.moveTime.toFixed(3)),
             distance: Number(delta.toFixed(3)),
             velocity: Number(((delta / seg.moveTime) * 2).toFixed(3)),
-            accel: 0, decel: 0, jerk: 0, payload: 0,
+            accel: 0, decel: 0, jerk: 0, payload: payload,
             calcTarget: "velocity"
           });
         }
@@ -136,7 +146,7 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
             duration: Number((seg.dwell / 1000).toFixed(3)),
             distance: 0,
             velocity: 0,
-            accel: 0, decel: 0, jerk: 0, payload: 0,
+            accel: 0, decel: 0, jerk: 0, payload: payload,
             calcTarget: "velocity"
           });
         }
@@ -174,13 +184,72 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
           </div>
         </div>
         
-        <div className="flex-1 relative bg-[#f8fafc] flex items-center justify-center p-4 min-h-[300px]">
-          <IsometricTrajectory pathData={pathData} showVelocityHeatmap={showVelocityHeatmap} />
+        <div className="flex-1 relative bg-[#f8fafc] flex flex-col min-h-[300px]">
+          <div className="flex-1 flex items-center justify-center p-4">
+            <IsometricTrajectory 
+              pathData={pathData} 
+              showVelocityHeatmap={showVelocityHeatmap}
+              scrubTime={scrubTime}
+              envelope={envelope}
+              tcpOffset={tcpOffset}
+            />
+          </div>
+          <div className="bg-white border-t border-gray-200 p-2 shrink-0 flex items-center space-x-3">
+             <div className="text-[10px] font-bold text-gray-500 uppercase whitespace-nowrap">Playback</div>
+             <input 
+               type="range" min="0" max="100" step="0.1" value={scrubTime} 
+               onChange={e => setScrubTime(Number(e.target.value))}
+               className="flex-1 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" 
+             />
+             <div className="text-xs font-bold text-gray-700 w-12 text-right">{scrubTime.toFixed(1)}%</div>
+          </div>
         </div>
       </div>
 
       {/* Right Column: Waypoint Table & Actions */}
       <div className="w-2/3 flex flex-col space-y-4">
+        
+        {/* Global Settings Panel */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-3 grid grid-cols-4 gap-4">
+           {/* Speed Override */}
+           <div>
+             <label className="text-[10px] font-bold text-gray-500 uppercase flex justify-between">
+                Speed Override <span>{speedOverride}%</span>
+             </label>
+             <input 
+               type="range" min="1" max="100" value={speedOverride} 
+               onChange={e => setSpeedOverride(Number(e.target.value))}
+               className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 mt-2" 
+             />
+           </div>
+           
+           {/* TCP Offset */}
+           <div>
+             <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">TCP Offset (X,Y,Z)</label>
+             <div className="flex space-x-1">
+               <input type="number" value={tcpOffset.x} onChange={e => setTcpOffset({...tcpOffset, x: Number(e.target.value)})} className="w-1/3 border rounded text-xs p-1 text-center" placeholder="X" />
+               <input type="number" value={tcpOffset.y} onChange={e => setTcpOffset({...tcpOffset, y: Number(e.target.value)})} className="w-1/3 border rounded text-xs p-1 text-center" placeholder="Y" />
+               <input type="number" value={tcpOffset.z} onChange={e => setTcpOffset({...tcpOffset, z: Number(e.target.value)})} className="w-1/3 border rounded text-xs p-1 text-center" placeholder="Z" />
+             </div>
+           </div>
+
+           {/* Work Envelope */}
+           <div>
+             <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Work Env. (X,Y,Z Max)</label>
+             <div className="flex space-x-1">
+               <input type="number" value={envelope.x} onChange={e => setEnvelope({...envelope, x: Number(e.target.value)})} className="w-1/3 border rounded text-xs p-1 text-center" />
+               <input type="number" value={envelope.y} onChange={e => setEnvelope({...envelope, y: Number(e.target.value)})} className="w-1/3 border rounded text-xs p-1 text-center" />
+               <input type="number" value={envelope.z} onChange={e => setEnvelope({...envelope, z: Number(e.target.value)})} className="w-1/3 border rounded text-xs p-1 text-center" />
+             </div>
+           </div>
+
+           {/* Payload */}
+           <div>
+             <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Payload (kg)</label>
+             <input type="number" value={payload} onChange={e => setPayload(Number(e.target.value))} className="w-full border rounded text-xs p-1 text-center" />
+           </div>
+        </div>
+
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex-1 flex flex-col">
           <div className="bg-gray-100 p-2 border-b text-xs font-bold text-gray-600 uppercase flex justify-between items-center shrink-0">
             <span>Waypoint Sequence</span>
