@@ -15,6 +15,7 @@ import { MechanismForm } from './forms/MechanismForm';
 import { GearboxForm } from './forms/GearboxForm';
 import { MotorDriveForm } from './forms/MotorDriveForm';
 import { AxisForm } from './forms/AxisForm';
+import { RoboticKinematicsForm } from './forms/RoboticKinematicsForm';
 
 const MotorForm = (props: any) => <MotorDriveForm {...props} onlyMotor={true} />;
 const DriveForm = (props: any) => <MotorDriveForm {...props} onlyDrive={true} />;
@@ -38,6 +39,7 @@ const BOMView = ({ params }: { params: any }) => (
 
 export const WorkArea = () => {
   const [activeTab, setActiveTab] = useState('System Data');
+  const [activeGroupTab, setActiveGroupTab] = useState('Configuration');
   const [sizingMetrics, setSizingMetrics] = useState<SizingMetrics | null>(null);
   
   const { data, selectedNodeId, updateNode, camTables } = useProjectStore();
@@ -57,6 +59,7 @@ export const WorkArea = () => {
 
   useEffect(() => {
     setActiveTab('System Data');
+    setActiveGroupTab('Configuration');
   }, [selectedNode?.id]);
 
   const { totalAxes, incompleteAxes, completeAxes } = useMemo(() => {
@@ -226,12 +229,25 @@ export const WorkArea = () => {
     );
   }
 
+  const groupTabs = params.configuration === 'Robotic' ? ['Configuration', 'Robotic Kinematics'] : ['Configuration'];
+
   return (
     <div className="flex-1 flex flex-col h-full bg-win-bg overflow-hidden">
       {statusBar}
       <Visualizer axes={selectedNode.children || []} />
-      <div className="flex-1 p-4 overflow-y-auto">
-        <PowerGroupForm params={params} onUpdate={handleUpdate} />
+      
+      <div className="flex-1 flex flex-col min-h-0 bg-win-panel border-t border-win-border">
+        <FormTabs tabs={groupTabs} activeTab={activeGroupTab} onTabClick={setActiveGroupTab} />
+        
+        <div className="flex-1 overflow-y-auto p-6">
+          {activeGroupTab === 'Configuration' && (
+            <PowerGroupForm params={params} onUpdate={handleUpdate} />
+          )}
+          
+          {activeGroupTab === 'Robotic Kinematics' && params.configuration === 'Robotic' && (
+            <RoboticKinematicsForm params={params} onUpdate={handleUpdate} groupNode={selectedNode} />
+          )}
+        </div>
       </div>
     </div>
   );
