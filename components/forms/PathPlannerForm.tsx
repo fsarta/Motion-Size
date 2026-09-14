@@ -116,14 +116,13 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
         const delta = (p1[coordKey] || 0) - (p0[coordKey] || 0);
         const seg = cycleEstimation.segments[i - 1];
         
-        // 1. Move segment
         if (seg.moveTime > 0) {
           motionProfile.push({
             id: crypto.randomUUID(),
-            type: "Accel/Decel",
+            type: "S-Curve",
             duration: Number(seg.moveTime.toFixed(3)),
             distance: Number(delta.toFixed(3)),
-            velocity: Number(((delta / seg.moveTime) * 2).toFixed(3)), // arbitrary triangular fallback
+            velocity: Number(((delta / seg.moveTime) * 2).toFixed(3)),
             accel: 0, decel: 0, jerk: 0, payload: 0,
             calcTarget: "velocity"
           });
@@ -149,13 +148,21 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
     alert("Motion profiles generated successfully for all mapped axes! Check the 'Motion Profile' tab on each axis.");
   };
 
+  const [showVelocityHeatmap, setShowVelocityHeatmap] = useState(true);
+
   return (
-    <div className="flex h-full space-x-4">
+    <div className="flex h-full font-sans text-xs select-none space-x-4">
       {/* Left Column: 3D Visualization & Metrics */}
       <div className="w-1/3 flex flex-col bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <div className="p-4 bg-blue-50 border-b border-blue-200 flex justify-between items-start shrink-0">
           <div>
-            <h3 className="text-sm font-bold text-blue-800">3D Trajectory</h3>
+            <div className="flex items-center space-x-2">
+              <h3 className="text-sm font-bold text-blue-800">3D Trajectory</h3>
+              <label className="flex items-center space-x-1 cursor-pointer bg-white px-2 py-0.5 rounded shadow-sm border border-blue-200 ml-2">
+                <input type="checkbox" checked={showVelocityHeatmap} onChange={e => setShowVelocityHeatmap(e.target.checked)} className="rounded text-blue-600 focus:ring-blue-500" />
+                <span className="text-[9px] uppercase font-bold text-gray-600">Heatmap</span>
+              </label>
+            </div>
             <p className="text-xs text-blue-600">Kinematic path preview</p>
           </div>
           <div className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm">
@@ -168,7 +175,7 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
         </div>
         
         <div className="flex-1 relative bg-[#f8fafc] flex items-center justify-center p-4 min-h-[300px]">
-          <IsometricTrajectory pathData={pathData} />
+          <IsometricTrajectory pathData={pathData} showVelocityHeatmap={showVelocityHeatmap} />
         </div>
       </div>
 

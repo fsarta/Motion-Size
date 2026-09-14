@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { RefreshCw } from 'lucide-react';
 
-export const IsometricTrajectory = ({ pathData }: { pathData: any[] }) => {
+export const IsometricTrajectory = ({ pathData, showVelocityHeatmap = false }: { pathData: any[], showVelocityHeatmap?: boolean }) => {
   const [azimuth, setAzimuth] = useState(Math.PI / 4); // 45 deg
   const [elevation, setElevation] = useState(Math.PI / 6); // 30 deg
   const [zoom, setZoom] = useState(1);
@@ -39,8 +39,8 @@ export const IsometricTrajectory = ({ pathData }: { pathData: any[] }) => {
     setZoom(1);
   };
 
-  const { points, paths, viewBox, grid, axes } = useMemo(() => {
-    if (!pathData || pathData.length === 0) return { points: [], paths: '', viewBox: '0 0 100 100', grid: [], axes: null };
+  const { points, standardPathString, heatmapPaths, viewBox, grid, axes } = useMemo(() => {
+    if (!pathData || pathData.length === 0) return { points: [], standardPathString: '', heatmapPaths: [], viewBox: '0 0 100 100', grid: [], axes: null };
 
     const cosA = Math.cos(azimuth);
     const sinA = Math.sin(azimuth);
@@ -112,13 +112,23 @@ export const IsometricTrajectory = ({ pathData }: { pathData: any[] }) => {
       const p2 = mapToSvg(project(maxX, y, 0).u, project(maxX, y, 0).v);
       gridLines.push({ id: `y${y}`, x1: p1.cx, y1: p1.cy, x2: p2.cx, y2: p2.cy });
     }
+    for(let i = -100; i <= 300; i+=100) {
+       for(let j = -100; j <= 300; j+=100) {
+           const p1 = mapToSvg(project(i*scale, j*scale, 0).u, project(i*scale, j*scale, 0).v);
+           const p2 = mapToSvg(project(i*scale, (j+100)*scale, 0).u, project(i*scale, (j+100)*scale, 0).v);
+           const p3 = mapToSvg(project((i+100)*scale, j*scale, 0).u, project((i+100)*scale, j*scale, 0).v);
+           gridLines.push({ x1: p1.cx, y1: p1.cy, x2: p2.cx, y2: p2.cy });
+           gridLines.push({ x1: p1.cx, y1: p1.cy, x2: p3.cx, y2: p3.cy });
+       }
+    }
 
-    // Origin Axes
-    const origin = mapToSvg(project(0, 0, 0).u, project(0, 0, 0).v);
-    const axisX = mapToSvg(project(maxX, 0, 0).u, project(maxX, 0, 0).v);
-    const axisY = mapToSvg(project(0, maxY, 0).u, project(0, maxY, 0).v);
-    const axisZ = mapToSvg(project(0, 0, maxZ).u, project(0, 0, maxZ).v);
-    const ax = { origin, axisX, axisY, axisZ };
+    // Axes lines
+    const axisLen = 50 * scale * zoom;
+    const orig = mapToSvg(project(0,0,0).u, project(0,0,0).v);
+    const axX = mapToSvg(project(axisLen,0,0).u, project(axisLen,0,0).v);
+    const axY = mapToSvg(project(0,axisLen,0).u, project(0,axisLen,0).v);
+    const axZ = mapToSvg(project(0,0,axisLen).u, project(0,0,axisLen).v);
+    const ax = { orig, axX, axY, axZ };
 
     // Waypoints and Shadows
     const svgPoints = scaledData.map(p => {
@@ -131,39 +141,81 @@ export const IsometricTrajectory = ({ pathData }: { pathData: any[] }) => {
 
     const dist3D = (p1: any, p2: any) => Math.sqrt((p1.x-p2.x)**2 + (p1.y-p2.y)**2 + (p1.z-p2.z)**2);
 
-    let pathString = '';
+    let standardPathString = '';
+    const heatmapPaths: { d: string, id: string, x1: number, y1: number, x2: number, y2: number, stops: {offset:string, color:string}[] }[] = [];
     
-    for (let i = 0; i < scaledData.length; i++) {
+    const gradPrefix = Math.random().toString(36).substr(2, 6);
+    const maxVel = Math.max(0.001, ...scaledData.map((p: any) => parseFloat(p.vel) || 0));
+    
+    // HSL: 120 (Green) -> 0 (Red)
+    const getHeatColor = (v: number) => {
+       const ratio = Math.min(1, Math.max(0, v / maxVel));
+       const hue = (1 - ratio) * 120; 
+       return `hsl(${hue}, 100%, 45%)`;
+    };
+
+    let cursor = { cx: 0, cy: 0 };
+    
+    if (scaledData.length > 0) {
+        const p0 = scaledData[0];
+        cursor = mapToSvg(project(p0.x, p0.y, p0.z).u, project(p0.x, p0.y, p0.z).v);
+        standardPathString += `M ${cursor.cx} ${cursor.cy} `;
+    }
+    
+    for (let i = 1; i < scaledData.length; i++) {
        const p = scaledData[i];
-       const projP = mapToSvg(project(p.x, p.y, p.z).u, project(p.x, p.y, p.z).v);
+       const pPrevRaw = scaledData[i-1];
        
-       if (i === 0) {
-           pathString += `M ${projP.cx} ${projP.cy} `;
-       } else if (i === scaledData.length - 1) {
-           pathString += `L ${projP.cx} ${projP.cy} `;
+       const projP = mapToSvg(project(p.x, p.y, p.z).u, project(p.x, p.y, p.z).v);
+       const projPrev = mapToSvg(project(pPrevRaw.x, pPrevRaw.y, pPrevRaw.z).u, project(pPrevRaw.x, pPrevRaw.y, pPrevRaw.z).v);
+       
+       const velP = parseFloat(p.vel) || 0;
+       const velPrev = parseFloat(pPrevRaw.vel) || 0;
+
+       // Generate 5 stops to force SVG to interpolate through the HSL spectrum instead of muddy RGB
+       const stops = [];
+       for (let step = 0; step <= 4; step++) {
+           const t = step / 4;
+           const velT = velPrev + (velP - velPrev) * t;
+           stops.push({ offset: `${t * 100}%`, color: getHeatColor(velT) });
+       }
+
+       // We define a gradient that spans the geometric segment from pPrev to p
+       const segGradient = {
+           id: `grad-${gradPrefix}-seg-${i}`,
+           x1: projPrev.cx, y1: projPrev.cy,
+           x2: projP.cx, y2: projP.cy,
+           stops
+       };
+       
+       if (i === scaledData.length - 1) {
+           standardPathString += `L ${projP.cx} ${projP.cy} `;
+           heatmapPaths.push({ ...segGradient, d: `M ${cursor.cx} ${cursor.cy} L ${projP.cx} ${projP.cy}` });
+           cursor = projP;
        } else {
            const r = parseFloat(p.blend) || 0;
            if (r <= 0) {
-               pathString += `L ${projP.cx} ${projP.cy} `;
+               standardPathString += `L ${projP.cx} ${projP.cy} `;
+               heatmapPaths.push({ ...segGradient, d: `M ${cursor.cx} ${cursor.cy} L ${projP.cx} ${projP.cy}` });
+               cursor = projP;
            } else {
-               const pPrev = scaledData[i-1];
                const pNext = scaledData[i+1];
                
-               const dPrev = dist3D(p, pPrev);
+               const dPrev = dist3D(p, pPrevRaw);
                const dNext = dist3D(p, pNext);
                
-               // Cap blend radius so it doesn't overshoot the segments.
-               // * scale because coordinates are scaled down by 0.1
                const actualR = Math.min(r * scale, dPrev / 2, dNext / 2);
                
                if (actualR <= 0.001 || dPrev === 0 || dNext === 0) {
-                  pathString += `L ${projP.cx} ${projP.cy} `;
+                  standardPathString += `L ${projP.cx} ${projP.cy} `;
+                  heatmapPaths.push({ ...segGradient, d: `M ${cursor.cx} ${cursor.cy} L ${projP.cx} ${projP.cy}` });
+                  cursor = projP;
                   continue;
                }
 
-               const startX = p.x + (pPrev.x - p.x) * (actualR / dPrev);
-               const startY = p.y + (pPrev.y - p.y) * (actualR / dPrev);
-               const startZ = p.z + (pPrev.z - p.z) * (actualR / dPrev);
+               const startX = p.x + (pPrevRaw.x - p.x) * (actualR / dPrev);
+               const startY = p.y + (pPrevRaw.y - p.y) * (actualR / dPrev);
+               const startZ = p.z + (pPrevRaw.z - p.z) * (actualR / dPrev);
                
                const endX = p.x + (pNext.x - p.x) * (actualR / dNext);
                const endY = p.y + (pNext.y - p.y) * (actualR / dNext);
@@ -172,13 +224,20 @@ export const IsometricTrajectory = ({ pathData }: { pathData: any[] }) => {
                const projStart = mapToSvg(project(startX, startY, startZ).u, project(startX, startY, startZ).v);
                const projEnd = mapToSvg(project(endX, endY, endZ).u, project(endX, endY, endZ).v);
                
-               pathString += `L ${projStart.cx} ${projStart.cy} `;
-               pathString += `Q ${projP.cx} ${projP.cy} ${projEnd.cx} ${projEnd.cy} `;
+               // Line to blend start (uses this segment's gradient)
+               standardPathString += `L ${projStart.cx} ${projStart.cy} `;
+               heatmapPaths.push({ ...segGradient, d: `M ${cursor.cx} ${cursor.cy} L ${projStart.cx} ${projStart.cy}` });
+
+               // Blend curve (also uses this segment's gradient, clamping naturally at P)
+               standardPathString += `Q ${projP.cx} ${projP.cy} ${projEnd.cx} ${projEnd.cy} `;
+               heatmapPaths.push({ ...segGradient, id: `grad-${gradPrefix}-curve-${i}`, d: `M ${projStart.cx} ${projStart.cy} Q ${projP.cx} ${projP.cy} ${projEnd.cx} ${projEnd.cy}` });
+
+               cursor = projEnd;
            }
        }
     }
 
-    return { points: svgPoints, paths: pathString, viewBox: `0 0 ${width} ${height}`, grid: gridLines, axes: ax };
+    return { points: svgPoints, standardPathString, heatmapPaths, viewBox: `0 0 ${width} ${height}`, grid: gridLines, axes: ax };
   }, [pathData, azimuth, elevation, zoom]);
 
   if (!axes) return null;
@@ -202,9 +261,9 @@ export const IsometricTrajectory = ({ pathData }: { pathData: any[] }) => {
         
         {/* Origin Axes */}
         <g strokeWidth="1">
-          <line x1={axes.origin.cx} y1={axes.origin.cy} x2={axes.axisX.cx} y2={axes.axisX.cy} stroke="#fca5a5" />
-          <line x1={axes.origin.cx} y1={axes.origin.cy} x2={axes.axisY.cx} y2={axes.axisY.cy} stroke="#86efac" />
-          <line x1={axes.origin.cx} y1={axes.origin.cy} x2={axes.axisZ.cx} y2={axes.axisZ.cy} stroke="#93c5fd" />
+          <line x1={axes.orig.cx} y1={axes.orig.cy} x2={axes.axX.cx} y2={axes.axX.cy} stroke="#fca5a5" />
+          <line x1={axes.orig.cx} y1={axes.orig.cy} x2={axes.axY.cx} y2={axes.axY.cy} stroke="#86efac" />
+          <line x1={axes.orig.cx} y1={axes.orig.cy} x2={axes.axZ.cx} y2={axes.axZ.cy} stroke="#93c5fd" />
         </g>
 
         {/* Drop Shadows */}
@@ -215,7 +274,24 @@ export const IsometricTrajectory = ({ pathData }: { pathData: any[] }) => {
         </g>
 
         {/* Trajectory Path */}
-        <path d={paths} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeLinejoin="round" />
+        {showVelocityHeatmap ? (
+          <g strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <defs>
+              {heatmapPaths.map(hp => (
+                <linearGradient key={hp.id} id={hp.id} x1={hp.x1} y1={hp.y1} x2={hp.x2} y2={hp.y2} gradientUnits="userSpaceOnUse">
+                  {hp.stops.map((s, idx) => (
+                      <stop key={idx} offset={s.offset} stopColor={s.color} />
+                  ))}
+                </linearGradient>
+              ))}
+            </defs>
+            {heatmapPaths.map(hp => (
+              <path key={`path-${hp.id}`} d={hp.d} stroke={`url(#${hp.id})`} />
+            ))}
+          </g>
+        ) : (
+          <path d={standardPathString} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeLinejoin="round" />
+        )}
 
         {/* Waypoints */}
         {points.map((p, i) => (

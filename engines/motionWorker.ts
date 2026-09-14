@@ -85,17 +85,19 @@ export const simulateMotion = (
 
     for (let i = 0; i <= steps; i++) {
       const t = i * actualDt;
-      let s = 0, v = 0, a = 0;
+      let s = 0, v = 0, a = 0, j = 0;
 
       if (seg.type === 'Accel/Decel') {
         a = (v1 - v0) / T;
         v = v0 + a * t;
         s = v0 * t + 0.5 * a * t * t;
+        j = 0; // Constant acceleration -> zero jerk
       } else if (seg.type === 'S-Curve') {
         const v_avg = S / T;
         v = v_avg * (1 - Math.cos((Math.PI * t) / T));
         s = v_avg * (t - (T / Math.PI) * Math.sin((Math.PI * t) / T));
         a = v_avg * (Math.PI / T) * Math.sin((Math.PI * t) / T);
+        j = v_avg * Math.pow(Math.PI / T, 2) * Math.cos((Math.PI * t) / T);
         v1 = v_avg * 2; 
       } else if (seg.type === 'Trapezoid') {
         const ta = T * 0.25; const td = T * 0.25; const tc = T - ta - td;
@@ -103,11 +105,13 @@ export const simulateMotion = (
         if (t <= ta) { a = vp / ta; v = a * t; s = 0.5 * a * t * t; }
         else if (t <= ta + tc) { a = 0; v = vp; s = (0.5 * vp * ta) + vp * (t - ta); }
         else { const tr = t - (ta + tc); a = -vp / td; v = vp + a * tr; s = (S - (0.5 * vp * td)) + (vp * tr + 0.5 * a * tr * tr); }
+        j = 0; // Infinite at corners, zero elsewhere. We chart zero.
         v1 = 0;
       } else if (seg.type === 'Sine') {
         s = S * (t / T - (1 / (2 * Math.PI)) * Math.sin((2 * Math.PI * t) / T));
         v = (S / T) * (1 - Math.cos((2 * Math.PI * t) / T));
         a = ((2 * Math.PI * S) / (T * T)) * Math.sin((2 * Math.PI * t) / T);
+        j = ((4 * Math.pow(Math.PI, 2) * S) / Math.pow(T, 3)) * Math.cos((2 * Math.PI * t) / T);
         v1 = 0;
       } else if (seg.type === 'Triangle') {
         const vPeak = 2 * S / T;
@@ -122,15 +126,16 @@ export const simulateMotion = (
             v = vPeak + a * tr;
             s = 0.5 * vPeak * halfT + vPeak * tr + 0.5 * a * tr * tr;
         }
+        j = 0; // Infinite at corners, zero elsewhere.
         v1 = 0;
       } else if (seg.type === 'Dwell/Traverse') {
-        v = 0; a = 0; s = 0;
+        v = 0; a = 0; s = 0; j = 0;
         v1 = 0;
       } else {
-        v = S / T; a = 0; s = v * t; v1 = v;
+        v = S / T; a = 0; s = v * t; v1 = v; j = 0;
       }
 
-      const j = (a - lastAcc) / (actualDt || 1);
+      // We no longer need discrete derivative for basic segments
       lastAcc = a;
 
       if (i > 0 || points.length === 0) {
