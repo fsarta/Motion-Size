@@ -82,6 +82,24 @@ const findParentGroup = (nodes: TreeNode[], id: string): TreeNode | null => {
   return null;
 };
 
+const getUniqueAxisName = (group: TreeNode, baseName: string, ignoreId: string | null = null): string => {
+  let name = baseName;
+  let counter = 1;
+  const existingNames = new Set(
+    (group.children || [])
+      .filter(c => c.type === 'axis' && c.id !== ignoreId)
+      .map(c => c.label)
+  );
+
+  while (existingNames.has(name)) {
+    counter++;
+    const match = baseName.match(/^(.*?)\s*\d+$/);
+    const prefix = match ? match[1].trim() : baseName;
+    name = `${prefix} ${counter}`;
+  }
+  return name;
+};
+
 export const useProjectStore = create<ProjectState>()(
   immer((set, get) => ({
     data: startData,
@@ -146,7 +164,7 @@ export const useProjectStore = create<ProjectState>()(
     setData: (data) => set((state) => { state.saveHistoryState(); state.data = data; }),
     setSelectedNodeId: (id) => set({ selectedNodeId: id }),
     setClipboard: (clipboard) => set({ clipboard }),
-    setNodeToDelete: (nodeToDelete) => set({ nodeToDelete }),
+    setNodeToDelete: (node) => set({ nodeToDelete: node }),
     setIsCamManagerOpen: (isCamManagerOpen) => set({ isCamManagerOpen }),
     setIsWizardOpen: (isWizardOpen) => set({ isWizardOpen }),
     setCamTables: (camTables) => set((state) => { state.saveHistoryState(); state.camTables = camTables; }),
@@ -186,6 +204,12 @@ export const useProjectStore = create<ProjectState>()(
       state.saveHistoryState();
       const node = findNode(state.data, id);
       if (node) {
+        if (newParams.axisName !== undefined && node.type === 'axis') {
+          const group = findParentGroup(state.data, id);
+          if (group) {
+            newParams.axisName = getUniqueAxisName(group, newParams.axisName, id);
+          }
+        }
         node.parameters = { ...node.parameters, ...newParams };
         if (newParams.axisName !== undefined) {
           node.label = newParams.axisName;
@@ -201,8 +225,7 @@ export const useProjectStore = create<ProjectState>()(
       }
 
       if (targetGroup && targetGroup.children) {
-        const count = targetGroup.children.filter((c: any) => c.type === 'axis').length + 1;
-        const axisLabel = `Axis ${count}`;
+        const axisLabel = getUniqueAxisName(targetGroup, 'Axis');
         const newAxis: TreeNode = {
           id: `axis_${crypto.randomUUID()}`,
           label: axisLabel,
@@ -225,18 +248,17 @@ export const useProjectStore = create<ProjectState>()(
       state.saveHistoryState();
       let targetGroup = state.data.find((n: any) => n.type === 'group') || state.data[0];
       if (targetGroup && targetGroup.children) {
-        const count = targetGroup.children.filter((c: any) => c.type === 'axis').length + 1;
-        const axisLabel = params.axisName || `Axis ${count}`;
+        const axisLabel = getUniqueAxisName(targetGroup, params.axisName || 'Axis');
         const newAxis: TreeNode = {
           id: `axis_${crypto.randomUUID()}`,
           label: axisLabel,
           icon: 'axis',
           type: 'axis',
           parameters: {
-             axisName: axisLabel,
              gearRatioNum: 1,
              gearRatioDen: 1,
-             ...params
+             ...params,
+             axisName: axisLabel // overwrite params.axisName with the unique one
           }
         };
         targetGroup.children.push(newAxis);

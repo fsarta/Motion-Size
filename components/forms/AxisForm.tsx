@@ -5,8 +5,22 @@ import { UnitInput, InputGroup, Select, SectionHeader } from '../Common';
 import { CamTable } from '../../types';
 
 export const AxisForm = ({ params, onUpdate, availableMasters, camTables }: { params: any, onUpdate: (p: any) => void, availableMasters: string[], camTables: CamTable[] }) => {
+  const [localName, setLocalName] = React.useState(params.axisName);
+
+  React.useEffect(() => {
+    setLocalName(params.axisName);
+  }, [params.axisName]);
+
   const handleChange = (key: string, value: any) => {
     onUpdate({ [key]: value });
+  };
+
+  const handleNameBlur = () => {
+    if (localName.trim() !== '' && localName !== params.axisName) {
+      handleChange('axisName', localName.trim());
+    } else {
+      setLocalName(params.axisName);
+    }
   };
 
   const isMasterFollower = params.profileType === 'Master/Follower' || params.profileType === 'Camming';
@@ -30,8 +44,10 @@ export const AxisForm = ({ params, onUpdate, availableMasters, camTables }: { pa
             <input 
               type="text" 
               className="w-full text-xs border border-gray-300 px-2 h-6 bg-white text-gray-900 focus:border-blue-500 outline-none" 
-              value={params.axisName} 
-              onChange={(e) => handleChange('axisName', e.target.value)} 
+              value={localName} 
+              onChange={(e) => setLocalName(e.target.value)} 
+              onBlur={handleNameBlur}
+              onKeyDown={(e) => e.key === 'Enter' && handleNameBlur()}
             />
           </InputGroup>
           <InputGroup label="Load Type">
