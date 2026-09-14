@@ -89,7 +89,7 @@ const DynamicKinematicsBuilder = ({ params, onUpdate, axes, robotType, currentDo
     <div className="space-y-4">
       <div className="bg-white border border-gray-200 rounded p-4 space-y-3">
         {configList.map((ax, idx) => (
-          <div key={ax.id} className={`flex items-center space-x-2 ${ax.type === 'prime' ? 'pl-8 border-l-2 border-blue-200' : ''} ${ax.type === 'aux' ? 'bg-gray-50 p-2 rounded' : ''}`}>
+          <div key={ax.id} className={`flex items-center space-x-2 ${ax.type === 'prime' ? 'pl-8 border-l-2 border-blue-200' : ''} ${ax.type === 'aux' ? '-mx-2 px-2 py-1.5 bg-gray-50 rounded border border-gray-100' : ''}`}>
             
             <div className="w-32 shrink-0">
               {ax.type === 'prime' ? (
