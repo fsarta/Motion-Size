@@ -110,8 +110,8 @@ const App = () => {
         onUpdateTable={(table) => updateCamTable(table.id, table)}
       />
       {isWizardOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-[800px] h-[600px] bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 md:p-8">
+          <div className="w-full h-full max-w-[1400px] max-h-[900px] bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col relative">
             <button onClick={() => setIsWizardOpen(false)} className="absolute top-2 right-2 p-2 hover:bg-gray-100 rounded-full z-10">
               <X size={20} className="text-gray-500" />
             </button>
