@@ -291,8 +291,8 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
                     <td className="p-1"><input type="number" value={p.ry || 0} onChange={(e) => updatePoint(p.id, 'ry', Number(e.target.value))} className="w-10 border p-1 rounded text-[10px] text-center mx-auto block text-gray-500 bg-transparent hover:bg-white" /></td>
                     <td className="p-1 border-r"><input type="number" value={p.rz || 0} onChange={(e) => updatePoint(p.id, 'rz', Number(e.target.value))} className="w-10 border p-1 rounded text-[10px] text-center mx-auto block text-gray-500 bg-transparent hover:bg-white" /></td>
                     
-                    <td className="p-1 bg-blue-50/20"><input type="number" min="0" value={p.vel} onChange={(e) => updatePoint(p.id, 'vel', Math.max(0, Number(e.target.value)))} className="w-14 border border-blue-200 p-1 rounded text-xs text-center mx-auto block bg-white" disabled={idx === 0} /></td>
-                    <td className="p-1 bg-blue-50/20 border-r"><input type="number" min="0" value={p.acc} onChange={(e) => updatePoint(p.id, 'acc', Math.max(0, Number(e.target.value)))} className="w-14 border border-blue-200 p-1 rounded text-xs text-center mx-auto block bg-white" disabled={idx === 0} /></td>
+                    <td className="p-1 bg-blue-50/20"><input type="number" min="0" value={p.vel} onChange={(e) => updatePoint(p.id, 'vel', Math.max(0, Number(e.target.value)))} className="w-14 border border-blue-200 p-1 rounded text-xs text-center mx-auto block bg-white" /></td>
+                    <td className="p-1 bg-blue-50/20 border-r"><input type="number" min="0" value={p.acc} onChange={(e) => updatePoint(p.id, 'acc', Math.max(0, Number(e.target.value)))} className="w-14 border border-blue-200 p-1 rounded text-xs text-center mx-auto block bg-white" /></td>
                     
                     <td className={`p-1 ${idx > 0 && idx < pathData.length - 1 && p.blend > cycleEstimation.actualBlends[idx] ? 'bg-red-50' : 'bg-orange-50/20'}`}>
                       <input 
