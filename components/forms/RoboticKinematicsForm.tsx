@@ -4,77 +4,93 @@ import { TreeNode } from '../../types';
 
 export const RoboticKinematicsForm = ({ params, onUpdate, groupNode }: { params: any, onUpdate: (p: any) => void, groupNode: TreeNode }) => {
   const robotType = params.robotType || 'Scara';
+  const dof = params.dof; // undefined means use default
   const jointMapping = params.jointMapping || {};
 
   const handleRobotTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onUpdate({ robotType: e.target.value, jointMapping: {} });
+    onUpdate({ robotType: e.target.value, dof: undefined, jointMapping: {} });
   };
 
-  const handleMappingChange = (joint: string, axisId: string) => {
-    onUpdate({ jointMapping: { ...jointMapping, [joint]: axisId } });
+  const handleDofChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    onUpdate({ dof: Number(e.target.value), jointMapping: {} });
   };
 
   const axes = groupNode.children?.filter(c => c.type === 'axis') || [];
 
-  const robotConfigs: Record<string, { joints: string[], image: React.ReactNode, desc: string }> = {
+  const robotConfigs: Record<string, { allowedDof?: number[], defaultDof?: number, getJoints: (d: number) => string[], image: React.ReactNode, desc: string }> = {
     'Scara': {
-      joints: ['J1 (Shoulder)', 'J2 (Elbow)', 'J3 (Z-Axis)', 'J4 (Roll)'],
+      getJoints: () => ['J1 (Shoulder)', 'J2 (Elbow)', 'J3 (Z-Axis)', 'J4 (Roll)'],
       desc: 'Selective Compliance Assembly Robot Arm. Excellent for fast pick and place.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><path d="M50 90 L50 70 L20 40 L60 20 L60 10" /><circle cx="50" cy="70" r="4"/><circle cx="20" cy="40" r="4"/><circle cx="60" cy="20" r="4"/></svg>
     },
     'Delta': {
-      joints: ['J1 (Base 1)', 'J2 (Base 2)', 'J3 (Base 3)', 'J4 (Rotary)'],
+      allowedDof: [2, 3, 4, 5],
+      defaultDof: 4,
+      getJoints: (d) => {
+        if (d === 2) return ['J1 (Base 1)', 'J2 (Base 2)'];
+        if (d === 3) return ['J1 (Base 1)', 'J2 (Base 2)', 'J3 (Base 3)'];
+        if (d === 5) return ['J1 (Base 1)', 'J2 (Base 2)', 'J3 (Base 3)', 'J4 (Rotary)', 'J5 (Tilt)'];
+        return ['J1 (Base 1)', 'J2 (Base 2)', 'J3 (Base 3)', 'J4 (Rotary)'];
+      },
       desc: 'Parallel robot for very fast top-down picking operations.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><path d="M20 20 L50 50 L80 20" /><path d="M50 20 L50 50" /><rect x="40" y="50" width="20" height="5" /></svg>
     },
+    'Stewart Platform': {
+      allowedDof: [4, 6],
+      defaultDof: 6,
+      getJoints: (d) => Array.from({ length: d }).map((_, i) => `Actuator ${i + 1}`),
+      desc: 'Parallel manipulator using prismatic actuators for high-rigidity multi-DOF motion.',
+      image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-1 fill-none"><polygon points="30,80 70,80 80,40 20,40" /><line x1="30" y1="80" x2="50" y2="20" /><line x1="70" y1="80" x2="50" y2="20" /></svg>
+    },
     'Gantry': {
-      joints: ['X-Axis', 'Y-Axis', 'Z-Axis'],
+      getJoints: () => ['X-Axis', 'Y-Axis', 'Z-Axis'],
       desc: 'Cartesian coordinate robot operating on a gantry structure.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><rect x="10" y="10" width="80" height="80" /><line x1="10" y1="30" x2="90" y2="30" /><circle cx="50" cy="30" r="4" /></svg>
     },
-    'Stewart (Hexapod)': {
-      joints: ['Actuator 1', 'Actuator 2', 'Actuator 3', 'Actuator 4', 'Actuator 5', 'Actuator 6'],
-      desc: 'Parallel manipulator using 6 prismatic actuators for 6 DOF.',
-      image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-1 fill-none"><polygon points="30,80 70,80 80,40 20,40" /><line x1="30" y1="80" x2="50" y2="20" /><line x1="70" y1="80" x2="50" y2="20" /></svg>
-    },
     'H-Bot': {
-      joints: ['Motor A', 'Motor B'],
+      getJoints: () => ['Motor A', 'Motor B'],
       desc: 'XY planar robot utilizing a single continuous belt.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><rect x="20" y="20" width="60" height="60" /><line x1="20" y1="50" x2="80" y2="50" /><circle cx="50" cy="50" r="4" /></svg>
     },
     'T-Bot': {
-      joints: ['Motor A', 'Motor B'],
+      getJoints: () => ['Motor A', 'Motor B'],
       desc: 'CoreXY variant forming a T-shape belt routing.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><path d="M20 20 L80 20 L50 80 Z" /></svg>
     },
     'Cartesian 2D': {
-      joints: ['X-Axis', 'Y-Axis'],
+      getJoints: () => ['X-Axis', 'Y-Axis'],
       desc: 'Simple 2-axis linear system (XY or XZ).',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><line x1="20" y1="80" x2="80" y2="80" /><line x1="20" y1="80" x2="20" y2="20" /></svg>
     },
     'Cartesian 3D': {
-      joints: ['X-Axis', 'Y-Axis', 'Z-Axis'],
+      getJoints: () => ['X-Axis', 'Y-Axis', 'Z-Axis'],
       desc: 'Standard 3-axis linear system.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><line x1="50" y1="50" x2="20" y2="80" /><line x1="50" y1="50" x2="90" y2="50" /><line x1="50" y1="50" x2="50" y2="10" /></svg>
     },
     'Articulated (6 DOF)': {
-      joints: ['J1 (Base)', 'J2 (Shoulder)', 'J3 (Elbow)', 'J4 (Pitch)', 'J5 (Yaw)', 'J6 (Roll)'],
+      getJoints: () => ['J1 (Base)', 'J2 (Shoulder)', 'J3 (Elbow)', 'J4 (Pitch)', 'J5 (Yaw)', 'J6 (Roll)'],
       desc: 'Standard 6-axis industrial robot arm.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><path d="M50 90 L50 70 L30 40 L60 20 L80 20" /><circle cx="50" cy="70" r="4"/><circle cx="30" cy="40" r="4"/><circle cx="60" cy="20" r="4"/></svg>
     },
     'Cylindrical': {
-      joints: ['J1 (Rotary Base)', 'J2 (Z-Lift)', 'J3 (Radial Extend)'],
+      getJoints: () => ['J1 (Rotary Base)', 'J2 (Z-Lift)', 'J3 (Radial Extend)'],
       desc: 'Robot operating in cylindrical coordinates.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><ellipse cx="50" cy="80" rx="30" ry="10" /><line x1="50" y1="80" x2="50" y2="20" /><line x1="50" y1="40" x2="90" y2="40" /></svg>
     },
     'Spherical': {
-      joints: ['J1 (Polar)', 'J2 (Elevation)', 'J3 (Radial)'],
+      getJoints: () => ['J1 (Polar)', 'J2 (Elevation)', 'J3 (Radial)'],
       desc: 'Robot operating in spherical coordinates.',
       image: <svg viewBox="0 0 100 100" className="w-full h-full stroke-blue-800 stroke-2 fill-none"><path d="M50 90 L50 70 L80 40" /><circle cx="50" cy="70" r="4"/></svg>
     }
   };
 
-  const config = robotConfigs[robotType];
+  const config = robotConfigs[robotType] || robotConfigs['Scara'];
+  const currentDof = dof ?? (config.defaultDof || config.getJoints(0).length);
+  const activeJoints = config.getJoints(currentDof);
+
+  const handleMappingChange = (joint: string, axisId: string) => {
+    onUpdate({ jointMapping: { ...jointMapping, [joint]: axisId } });
+  };
 
   return (
     <div className="flex space-x-6 h-full p-4">
@@ -83,11 +99,24 @@ export const RoboticKinematicsForm = ({ params, onUpdate, groupNode }: { params:
         
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Robot Type</label>
-          <Select 
-            value={robotType} 
-            onChange={handleRobotTypeChange} 
-            options={Object.keys(robotConfigs)} 
-          />
+          <div className="flex space-x-2">
+            <div className="flex-1">
+              <Select 
+                value={robotType} 
+                onChange={handleRobotTypeChange} 
+                options={Object.keys(robotConfigs)} 
+              />
+            </div>
+            {config.allowedDof && (
+              <div className="w-20 shrink-0">
+                <Select 
+                  value={currentDof.toString()} 
+                  onChange={handleDofChange} 
+                  options={config.allowedDof.map(d => d.toString())}
+                />
+              </div>
+            )}
+          </div>
         </div>
         
         <div className="p-3 bg-blue-50 border border-blue-200 text-sm text-blue-800 rounded">
@@ -102,7 +131,7 @@ export const RoboticKinematicsForm = ({ params, onUpdate, groupNode }: { params:
       </div>
 
       <div className="w-1/2">
-        <h3 className="text-sm font-bold text-gray-700 border-b pb-2 mb-4">Joint to Axis Mapping</h3>
+        <h3 className="text-sm font-bold text-gray-700 border-b pb-2 mb-4">Map Joints to Project Axes</h3>
         <p className="text-xs text-gray-500 mb-4">
           Assign a physical axis from this group to each mechanical joint of the selected robot.
         </p>
@@ -113,7 +142,7 @@ export const RoboticKinematicsForm = ({ params, onUpdate, groupNode }: { params:
           </div>
         ) : (
           <div className="space-y-3 bg-white p-4 border border-gray-200 rounded">
-            {config.joints.map((joint, idx) => {
+            {activeJoints.map((joint, idx) => {
               // Create a list of axes that are either currently assigned to THIS joint, or not assigned to ANY joint.
               const assignedAxisIds = Object.values(jointMapping).filter(Boolean);
               const availableAxes = axes.filter(axis => 
