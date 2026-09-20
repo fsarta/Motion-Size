@@ -6,6 +6,7 @@ import { ProfileEditor } from './ProfileEditor';
 import { FormTabs } from './Common';
 import { Visualizer } from './Visualizer';
 import { UnitType } from '../utils/unitConversion';
+import { calculateAxisDynamics } from '../utils/physics';
 
 import { useProjectStore } from '../store/useProjectStore';
 
@@ -43,7 +44,7 @@ export const WorkArea = () => {
   const [activeGroupTab, setActiveGroupTab] = useState('Configuration');
   const [sizingMetrics, setSizingMetrics] = useState<SizingMetrics | null>(null);
   
-  const { data, selectedNodeId, updateNode, camTables } = useProjectStore();
+  const { data, selectedNodeId, updateNode, camTables, setSelectedNodeId } = useProjectStore();
   
   const findNode = (nodes: TreeNode[], id: string): TreeNode | null => {
     for (const node of nodes) {
@@ -156,17 +157,11 @@ export const WorkArea = () => {
     return findAxisProfile(data);
   }, [data, params.masterAxis]);
 
-  const totalInertia = useMemo(() => {
-    const mechInertia = parseFloat(String(params.screwInertia || params.driverInertia || params.sprocketInertia || params.pinionInertia || params.crankInertia || params.rotatingInertia || params.drivingInertia || 0)) * 0.0001; // kg·cm² to kg·m²
-    const transInertia = parseFloat(String(params.transInertia || 0)) * 0.0001;
-    const motorInertia = parseFloat(String(params.motorInertia || 0)) * 0.0001;
-    const gearboxInertia = parseFloat(String(params.gearboxInertia || 0)) * 0.0001;
-    const gearboxRatio = parseFloat(String(params.gearboxRatio || 1));
-    // Load inertia reflected through gearbox
-    const loadSideInertia = mechInertia + transInertia;
-    const reflectedLoad = gearboxRatio > 0 ? loadSideInertia / (gearboxRatio * gearboxRatio) : loadSideInertia;
-    return reflectedLoad + gearboxInertia + motorInertia;
-  }, [params]);
+  const axisDynamics = useMemo(() => calculateAxisDynamics(params), [params]);
+  const totalInertia = axisDynamics.totalInertiaKgM2;
+  const friction = axisDynamics.frictionTorqueNm;
+  const efficiency = axisDynamics.combinedEfficiency;
+  const gravityForce = axisDynamics.gravityTorqueNm;
 
   const profileType = params.profileType || 'Time Based';
   const masterAxisFullName = String(params.masterAxis || 'Virtual Master');
@@ -178,10 +173,6 @@ export const WorkArea = () => {
   // Logic to determine if we use degrees or millimeters based on AxisForm selection
   const posUnitType: UnitType = params.axisUsage === 'Linear' ? 'length' : 'angle';
   const isReadOnly = profileType !== 'Time Based';
-
-  const friction = parseFloat(String(params.kineticFriction || 0));
-  const efficiency = (parseFloat(String(params.mechanismEfficiency || 100)) / 100) * (parseFloat(String(params.gearboxEfficiency || 100)) / 100);
-  const gravityForce = 0; // Simplified for now
 
   if (selectedNode.type === 'axis') {
     const tabs = ['System Data', 'Mechanism', 'Motion Profile', 'Motor', 'Drive', 'Gearbox', 'BOM'];
@@ -216,6 +207,7 @@ export const WorkArea = () => {
                        friction={friction}
                        efficiency={efficiency}
                        gravityForce={gravityForce}
+                       params={params}
                      />
                   </div>
                 )}
@@ -235,14 +227,18 @@ export const WorkArea = () => {
   return (
     <div className="flex-1 flex flex-col h-full bg-win-bg overflow-hidden">
       {statusBar}
-      <Visualizer axes={selectedNode.children || []} />
+      <Visualizer 
+        axes={selectedNode.children || []} 
+        selectedAxisId={selectedNodeId}
+        onSelectAxis={setSelectedNodeId}
+      />
       
       <div className="flex-1 flex flex-col min-h-0 bg-win-panel border-t border-win-border">
         <FormTabs tabs={groupTabs} activeTab={activeGroupTab} onTabClick={setActiveGroupTab} />
         
         <div className="flex-1 overflow-y-auto p-6">
           {activeGroupTab === 'Configuration' && (
-            <PowerGroupForm params={params} onUpdate={handleUpdate} />
+            <PowerGroupForm params={params} onUpdate={handleUpdate} groupNode={selectedNode} />
           )}
           
           {activeGroupTab === 'Robotic Kinematics' && params.configuration === 'Robotic' && (

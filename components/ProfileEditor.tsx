@@ -64,11 +64,15 @@ export const ProfileEditor = ({
 }: any) => {
   const { camTables } = useProjectStore();
   const camTable = useMemo(() => {
-    if (profileType === 'Camming' && params?.camTableName) {
-      return camTables.find(t => t.name === params.camTableName);
+    if (profileType === 'Camming') {
+      const targetName = params?.camTableName || params?.camTableId;
+      if (targetName) {
+        return camTables.find(t => t.name === targetName || t.id === targetName);
+      }
+      return camTables[0];
     }
     return undefined;
-  }, [profileType, params?.camTableName, camTables]);
+  }, [profileType, params?.camTableName, params?.camTableId, camTables]);
   const [segments, setSegments] = useState<MotionSegment[]>(DEFAULT_SEGMENTS);
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_SEGMENTS[0].id);
   const [cursorTime, setCursorTime] = useState<number | null>(null);
@@ -122,11 +126,13 @@ export const ProfileEditor = ({
         friction,
         efficiency,
         gravityForce,
-        camTable
+        camTable,
+        axisUsage: params?.axisUsage || (posUnitType === 'length' ? 'Linear' : 'Rotary'),
+        feedConstant: params?.feedConstant || (posUnitType === 'length' ? 10 : 360)
       });
     }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [segments, totalInertia, profileType, gearRatio, masterProfileData, friction, efficiency, gravityForce, camTable]);
+  }, [segments, totalInertia, profileType, gearRatio, masterProfileData, friction, efficiency, gravityForce, camTable, params, posUnitType]);
 
   useEffect(() => {
     if (timeSeries.length === 0) return;
@@ -134,27 +140,31 @@ export const ProfileEditor = ({
     const velocities = timeSeries.map(p => p.vel);
     const rmsT = Math.sqrt(torques.reduce((acc, v) => acc + v * v, 0) / torques.length);
     const peakT = Math.max(...torques.map(Math.abs));
-    const maxVel = Math.max(...velocities.map(Math.abs));
     
-    // Convert velocity to RPM if rotary (vel is in deg/s, 1 rpm = 6 deg/s)
-    const maxSpeedRpm = posUnitType === 'angle' ? maxVel / 6 : maxVel; // linear needs mechanism conversion
+    // Accurate angular velocity and RPM at motor shaft
+    const feed = params?.feedConstant || (posUnitType === 'length' ? 10 : 360);
+    const speedsRpm = velocities.map(v => 
+      posUnitType === 'length' ? (Math.abs(v) / feed) * 60 * gearRatio : (Math.abs(v) / 6) * gearRatio
+    );
+    const maxSpeedRpm = Math.max(...speedsRpm, 0);
+    const rmsSpeedRpm = Math.sqrt(speedsRpm.reduce((acc, v) => acc + v * v, 0) / speedsRpm.length);
     
     if (onSizingMetricsChange) {
       onSizingMetricsChange({
         rmsTorque: rmsT,
         peakTorque: peakT,
-        rmsSpeed: maxSpeedRpm * 0.7, // estimate
+        rmsSpeed: rmsSpeedRpm,
         peakSpeed: maxSpeedRpm
       });
     }
-  }, [timeSeries]);
+  }, [timeSeries, posUnitType, gearRatio, params]);
 
   const [traces, setTraces] = useState<TraceConfig[]>([
     { key: 'pos', label: 'Position', color: '#10b981', unitType: posUnitType, active: true },
-    { key: 'vel', label: 'Velocity', color: '#3b82f6', unitType: 'speed', active: true },
-    { key: 'acc', label: 'Accel', color: '#ef4444', unitType: 'acceleration', active: false },
-    { key: 'jerk', label: 'Jerk', color: '#f97316', unitType: 'jerk', active: false },
-    { key: 'torque', label: 'Torque', color: '#8b5cf6', unitType: 'torque', active: false },
+    { key: 'vel', label: 'Velocity', color: '#3b82f6', unitType: posUnitType === 'length' ? 'linearSpeed' : 'speed', active: true },
+    { key: 'acc', label: 'Accel', color: '#ef4444', unitType: posUnitType === 'length' ? 'linearAcceleration' : 'acceleration', active: false },
+    { key: 'jerk', label: 'Jerk', color: '#f97316', unitType: posUnitType === 'length' ? 'linearJerk' : 'jerk', active: false },
+    { key: 'torque', label: 'Torque', color: '#8b5cf6', unitType: 'torque', active: true },
     { key: 'masterPos', label: 'Master Pos', color: '#6366f1', unitType: 'angle', active: false },
   ]);
 
@@ -425,7 +435,12 @@ export const ProfileEditor = ({
                     const currentVal = timeSeries.find(p => p.t >= (cursorTime || 0))?.[t.key] || 0;
                     const vals = timeSeries.map(p => p[t.key] as number);
                     const rms = Math.sqrt(vals.reduce((acc, v) => acc + v*v, 0) / vals.length);
-                    const unitLabel = t.key === 'pos' ? (posUnitType === 'angle' ? 'deg' : 'mm') : t.key === 'vel' ? (posUnitType === 'angle' ? 'deg/s' : 'mm/s') : t.key === 'acc' ? (posUnitType === 'angle' ? 'deg/s²' : 'mm/s²') : t.key === 'jerk' ? (posUnitType === 'angle' ? 'deg/s³' : 'mm/s³') : '';
+                    const unitLabel = t.key === 'pos' ? (posUnitType === 'angle' ? 'deg' : 'mm') 
+                      : t.key === 'vel' ? (posUnitType === 'angle' ? 'deg/s' : 'mm/s') 
+                      : t.key === 'acc' ? (posUnitType === 'angle' ? 'deg/s²' : 'mm/s²') 
+                      : t.key === 'jerk' ? (posUnitType === 'angle' ? 'deg/s³' : 'mm/s³') 
+                      : t.key === 'torque' ? 'Nm' 
+                      : t.key === 'masterPos' ? 'deg' : '';
                     return (
                     <tr key={t.key} className="border-b border-gray-100 hover:bg-win-hover transition-colors font-mono">
                         <td className="p-2 border-r border-win-border font-sans font-bold flex items-center">

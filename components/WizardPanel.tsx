@@ -153,9 +153,10 @@ export const WizardPanel = () => {
                   <ProfileEditor 
                     profileType={data.profileType} 
                     savedProfileData={data.motionProfileData}
-                    posUnitType={data.axisUsage === 'Linear' ? 'linear' : 'angle'}
+                    posUnitType={data.axisUsage === 'Linear' ? 'length' : 'angle'}
                     totalInertia={0.01}
                     onProfileChange={(d) => setSingleData('motionProfileData', d)}
+                    params={data}
                   />
                 </div>
               </div>

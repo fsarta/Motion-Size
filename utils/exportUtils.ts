@@ -1,23 +1,52 @@
 import { TreeNode } from '../types';
+import { calculateAxisDynamics } from './physics';
 
 export function exportProjectToCSV(data: TreeNode[]): string {
-  const headers = ['Axis Name', 'Mechanism', 'Gearbox Vendor', 'Gearbox Model', 'Motor Vendor', 'Motor Model', 'Drive Vendor', 'Drive Model'];
+  const headers = [
+    'Axis Name',
+    'Motion Type',
+    'Mechanism',
+    'Load Mass (kg)',
+    'Gearbox Vendor',
+    'Gearbox Model',
+    'Gear Ratio',
+    'Motor Vendor',
+    'Motor Model',
+    'Rated Torque (Nm)',
+    'Peak Torque (Nm)',
+    'Rated Speed (RPM)',
+    'Inertia Ratio (JL/JM)',
+    'Drive Vendor',
+    'Drive Model',
+    'Drive Max Current (A)'
+  ];
+
   const rows: string[][] = [headers];
 
   const traverse = (nodes: TreeNode[]) => {
     for (const node of nodes) {
       if (node.type === 'axis') {
         const p = node.parameters || {};
+        const dyn = calculateAxisDynamics(p);
+        
         rows.push([
           node.label || '',
+          p.axisUsage || 'Rotary',
           p.mechanismType || '',
+          String(dyn.totalMovingMassKg),
           p.gearboxVendor || '',
           p.gearboxModel || '',
+          String(dyn.gearboxRatio),
           p.motorVendor || '',
           p.motorModel || '',
+          String(p.ratedTorque || ''),
+          String(p.peakTorque || ''),
+          String(p.ratedSpeed || ''),
+          dyn.inertiaRatio.toFixed(2),
           p.driveVendor || '',
-          p.driveModel || ''
-        ].map(val => `"${val}"`)); // wrap in quotes to escape commas
+          p.driveModel || '',
+          String(p.driveMaxCurrent || '')
+        ].map(val => `"${val.replace(/"/g, '""')}"`));
       }
       if (node.children) {
         traverse(node.children);

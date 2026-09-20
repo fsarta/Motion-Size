@@ -68,7 +68,7 @@ export const CamEditor = ({
                 if (currentX > sector.masterEnd) break;
 
                 const u = Math.min(1, Math.max(0, xLocal / rangeX));
-                const lawFunc = MotionLaws[sector.law];
+                const lawFunc = MotionLaws[sector.law] || MotionLaws['Poly5'];
                 const [s_norm, v_norm, a_norm, j_norm] = lawFunc(u);
 
                 points.push({
