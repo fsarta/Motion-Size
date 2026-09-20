@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, AlertTriangle, ExternalLink, Activity, Plus, CheckCircle2, XCircle } from 'lucide-react';
+import { Search, Filter, AlertTriangle, Activity, Plus, CheckCircle2, XCircle, FileText, SlidersHorizontal, Eye, ShieldCheck, Ruler, Zap } from 'lucide-react';
 import { UnitInput, InputGroup, Select, SectionHeader } from '../Common';
-import { getMotorCatalog, getDriveCatalog, addCustomMotor, addCustomDrive } from '../../catalogData';
+import { getFullMotorCatalog, getFullDriveCatalog, saveCustomMotor, saveCustomDrive } from '../../catalogData';
 import { MotorSpec, DriveSpec, SizingMetrics } from '../../types';
 import { calculateAxisDynamics, calculateThermalDerating } from '../../utils/physics';
+import { ComponentDatasheetModal } from '../modals/ComponentDatasheetModal';
+import { CatalogExplorerModal } from '../modals/CatalogExplorerModal';
 
 const PerformanceBar = ({ 
   percent, 
@@ -17,9 +19,9 @@ const PerformanceBar = ({
   isStock?: boolean
 }) => {
   const isOver = type === 'usage' ? percent > 100 : percent < 100;
-  let colorClass = 'bg-[#4ade80]'; // Default bright green
-  if (isOver) colorClass = 'bg-[#facc15]'; // Yellow for overflow/unsafe
-  if (!isStock) colorClass = 'bg-[#fde047]'; // Stock warning yellow
+  let colorClass = 'bg-[#4ade80]';
+  if (isOver) colorClass = 'bg-[#facc15]';
+  if (!isStock) colorClass = 'bg-[#fde047]';
 
   const visualPercent = Math.min(Math.max(percent, 0), 100);
 
@@ -62,10 +64,8 @@ const TorqueSpeedCurve = ({
   const scaleX = (spd: number) => padL + (spd / maxPlotSpeed) * (w - padL - padR);
   const scaleY = (trq: number) => (h - padB) - (trq / maxPlotTorque) * (h - padT - padB);
 
-  // S1 continuous profile points
   const pS1_0 = [scaleX(0), scaleY(effectiveRatedTorque)];
   const pS1_rated = [scaleX(motor.ratedSpeed), scaleY(effectiveRatedTorque)];
-  // Field weakening slope to peak speed: torque decreases proportionally
   const s1EndTorque = effectiveRatedTorque * (motor.ratedSpeed / motor.peakSpeed);
   const pS1_peak = [scaleX(motor.peakSpeed), scaleY(s1EndTorque)];
   const pS1_base = [scaleX(motor.peakSpeed), scaleY(0)];
@@ -73,7 +73,6 @@ const TorqueSpeedCurve = ({
 
   const pathS1 = `M ${pS1_0[0]} ${pS1_0[1]} L ${pS1_rated[0]} ${pS1_rated[1]} L ${pS1_peak[0]} ${pS1_peak[1]} L ${pS1_base[0]} ${pS1_base[1]} L ${pS1_origin[0]} ${pS1_origin[1]} Z`;
 
-  // S3 peak profile points
   const pS3_0 = [scaleX(0), scaleY(motor.peakTorque)];
   const pS3_rated = [scaleX(motor.ratedSpeed * 0.9), scaleY(motor.peakTorque)];
   const s3EndTorque = motor.peakTorque * (motor.ratedSpeed / motor.peakSpeed);
@@ -81,7 +80,6 @@ const TorqueSpeedCurve = ({
 
   const pathS3 = `M ${pS3_0[0]} ${pS3_0[1]} L ${pS3_rated[0]} ${pS3_rated[1]} L ${pS3_peak[0]} ${pS3_peak[1]} L ${pS1_peak[0]} ${pS1_peak[1]} L ${pS1_rated[0]} ${pS1_rated[1]} L ${pS1_0[0]} ${pS1_0[1]} Z`;
 
-  // Operating points
   const rmsX = scaleX(req.ratedSpeed);
   const rmsY = scaleY(req.ratedTorque);
   const peakX = scaleX(req.peakSpeed);
@@ -107,16 +105,12 @@ const TorqueSpeedCurve = ({
         </div>
 
         <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} className="bg-gray-50 border border-gray-200 rounded">
-          {/* S3 Peak Area */}
           <path d={pathS3} fill="#fef3c7" stroke="#f59e0b" strokeWidth="1.5" opacity="0.8" />
-          {/* S1 Continuous Area */}
           <path d={pathS1} fill="#dcfce7" stroke="#16a34a" strokeWidth="2" opacity="0.8" />
 
-          {/* Axes */}
           <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#64748b" strokeWidth="1.5" />
           <line x1={padL} y1={padT} x2={padL} y2={h - padB} stroke="#64748b" strokeWidth="1.5" />
 
-          {/* Grid ticks */}
           <text x={padL - 6} y={scaleY(effectiveRatedTorque) + 3} textAnchor="end" fontSize="9" fill="#16a34a" fontWeight="bold">{effectiveRatedTorque.toFixed(1)}</text>
           <text x={padL - 6} y={scaleY(motor.peakTorque) + 3} textAnchor="end" fontSize="9" fill="#d97706" fontWeight="bold">{motor.peakTorque.toFixed(1)}</text>
           <text x={padL - 6} y={h - padB} textAnchor="end" fontSize="9" fill="#64748b">0</text>
@@ -127,11 +121,9 @@ const TorqueSpeedCurve = ({
           <text x={padL} y={padT - 6} fontSize="9" fill="#475569" fontWeight="bold">Torque (Nm)</text>
           <text x={w - padR} y={h - 6} textAnchor="end" fontSize="9" fill="#475569" fontWeight="bold">Speed (RPM)</text>
 
-          {/* RMS Operating Point */}
           <circle cx={rmsX} cy={rmsY} r="4" fill="#2563eb" stroke="#ffffff" strokeWidth="1.5" />
           <text x={rmsX + 6} y={rmsY - 4} fontSize="9" fill="#1d4ed8" fontWeight="bold">RMS ({req.ratedSpeed.toFixed(0)} rpm, {req.ratedTorque.toFixed(1)} Nm)</text>
 
-          {/* Peak Operating Point */}
           <circle cx={peakX} cy={peakY} r="4" fill="#dc2626" stroke="#ffffff" strokeWidth="1.5" />
           <text x={peakX + 6} y={peakY - 4} fontSize="9" fill="#b91c1c" fontWeight="bold">Peak ({req.peakSpeed.toFixed(0)} rpm, {req.peakTorque.toFixed(1)} Nm)</text>
         </svg>
@@ -178,13 +170,16 @@ const MotorSelectionTable = ({
   motors, 
   selectedModel, 
   onSelect,
+  onOpenDatasheet,
   appInertia,
   req,
-  derating = 1.0
+  derating = 1.0,
+  tableView = 'safety'
 }: { 
   motors: MotorSpec[], 
   selectedModel: string, 
   onSelect: (m: MotorSpec) => void,
+  onOpenDatasheet: (m: MotorSpec) => void,
   appInertia: number,
   req: {
     ratedTorque: number,
@@ -192,32 +187,58 @@ const MotorSelectionTable = ({
     ratedSpeed: number,
     peakSpeed: number
   },
-  derating?: number
+  derating?: number,
+  tableView?: 'safety' | 'specs'
 }) => {
   return (
     <div className="flex-1 border border-gray-400 bg-[#f0f0f0] overflow-hidden flex flex-col shadow-inner">
       <div className="overflow-x-auto overflow-y-auto custom-scrollbar flex-1">
-        <table className="w-full text-left border-collapse min-w-[1800px] bg-white">
+        <table className="w-full text-left border-collapse min-w-[1900px] bg-white">
           <thead className="bg-[#f8f9fa] sticky top-0 z-20 border-b border-gray-400">
-            <tr className="text-[9px] text-gray-700 uppercase font-bold tracking-tight">
-              <th className="p-1 border-r border-gray-300">Part No.</th>
-              <th className="p-1 border-r border-gray-300 text-center">Rated Torque (Nm)</th>
-              <th className="p-1 border-r border-gray-300 w-32">Factor of Safety</th>
-              <th className="p-1 border-r border-gray-300 text-center">Required Rated Torque (Nm)</th>
-              <th className="p-1 border-r border-gray-300 text-center">Peak Torque (Nm)</th>
-              <th className="p-1 border-r border-gray-300 w-32">Factor of Safety</th>
-              <th className="p-1 border-r border-gray-300 text-center">Required Peak Torque (Nm)</th>
-              <th className="p-1 border-r border-gray-300 text-center">Rated Speed (RPM)</th>
-              <th className="p-1 border-r border-gray-300 w-32">% Rated Speed</th>
-              <th className="p-1 border-r border-gray-300 text-center">Required Rated Speed (RPM)</th>
-              <th className="p-1 border-r border-gray-300 text-center">Peak Speed (RPM)</th>
-              <th className="p-1 border-r border-gray-300 w-32">% Peak Speed</th>
-              <th className="p-1 border-r border-gray-300 text-center">Required Peak Speed (RPM)</th>
-              <th className="p-1 border-r border-gray-300 text-center">Allowable Inertia Ratio</th>
-              <th className="p-1 border-r border-gray-300 w-32">% of Allowable Inertia Ratio</th>
-              <th className="p-1 border-r border-gray-300 text-center">Application Inertia Ratio</th>
-              <th className="p-1 w-32">Cost Factor</th>
-            </tr>
+            {tableView === 'safety' ? (
+              <tr className="text-[9px] text-gray-700 uppercase font-bold tracking-tight">
+                <th className="p-1 border-r border-gray-300 w-10 text-center">Info</th>
+                <th className="p-1 border-r border-gray-300">Part No.</th>
+                <th className="p-1 border-r border-gray-300 text-center">Rated Torque (Nm)</th>
+                <th className="p-1 border-r border-gray-300 w-32">Factor of Safety</th>
+                <th className="p-1 border-r border-gray-300 text-center">Required Rated Torque (Nm)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Peak Torque (Nm)</th>
+                <th className="p-1 border-r border-gray-300 w-32">Factor of Safety</th>
+                <th className="p-1 border-r border-gray-300 text-center">Required Peak Torque (Nm)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Rated Speed (RPM)</th>
+                <th className="p-1 border-r border-gray-300 w-32">% Rated Speed</th>
+                <th className="p-1 border-r border-gray-300 text-center">Required Rated Speed (RPM)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Peak Speed (RPM)</th>
+                <th className="p-1 border-r border-gray-300 w-32">% Peak Speed</th>
+                <th className="p-1 border-r border-gray-300 text-center">Required Peak Speed (RPM)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Allowable Inertia Ratio</th>
+                <th className="p-1 border-r border-gray-300 w-32">% of Allowable Inertia Ratio</th>
+                <th className="p-1 border-r border-gray-300 text-center">Application Inertia Ratio</th>
+                <th className="p-1 w-32">Cost Factor</th>
+              </tr>
+            ) : (
+              <tr className="text-[9px] text-gray-700 uppercase font-bold tracking-tight">
+                <th className="p-1 border-r border-gray-300 w-10 text-center">Info</th>
+                <th className="p-1 border-r border-gray-300">Part No.</th>
+                <th className="p-1 border-r border-gray-300">Vendor & Series</th>
+                <th className="p-1 border-r border-gray-300 text-center">Power PN (kW)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Rated MN (Nm)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Stall M0 (Nm)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Peak Mmax (Nm)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Rated Speed (RPM)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Rated IN (Arms)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Torque Const. Kt (Nm/A)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Voltage Const. Ke</th>
+                <th className="p-1 border-r border-gray-300 text-center">Flange Size (mm)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Shaft Dia x L (mm)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Rotor JM (kg·cm²)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Mass (kg)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Max Fr (N)</th>
+                <th className="p-1 border-r border-gray-300 text-center">Max Fa (N)</th>
+                <th className="p-1 border-r border-gray-300 text-center">IP Rating</th>
+                <th className="p-1 text-center">Brake Option</th>
+              </tr>
+            )}
           </thead>
           <tbody className="text-[11px] divide-y divide-gray-200">
             {motors.map((motor) => {
@@ -237,35 +258,65 @@ const MotorSelectionTable = ({
                   onClick={() => onSelect(motor)}
                   className={`cursor-pointer border-b border-gray-200 hover:bg-[#e5f3ff] ${isSelected ? 'bg-[#cce8ff]' : ''}`}
                 >
+                  <td className="p-1 border-r border-gray-300 text-center" onClick={(e) => { e.stopPropagation(); onOpenDatasheet(motor); }}>
+                    <button className="p-0.5 text-gray-500 hover:text-blue-600 rounded hover:bg-white" title="View Full Technical Datasheet">
+                      <Eye size={12} />
+                    </button>
+                  </td>
                   <td className="p-1 border-r border-gray-300 font-bold text-[#003366] whitespace-nowrap">{motor.model}</td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono">{effectiveRatedTorque.toFixed(2)}</td>
-                  <td className="p-1 border-r border-gray-300 px-1">
-                    <PerformanceBar type="safety" percent={ratedSafety * 50} value={ratedSafety.toFixed(2)} />
-                  </td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.ratedTorque.toFixed(2)}</td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.peakTorque.toFixed(1)}</td>
-                  <td className="p-1 border-r border-gray-300 px-1">
-                    <PerformanceBar type="safety" percent={peakSafety * 25} value={peakSafety.toFixed(2)} />
-                  </td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.peakTorque.toFixed(1)}</td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.ratedSpeed}</td>
-                  <td className="p-1 border-r border-gray-300 px-1">
-                    <PerformanceBar type="usage" percent={ratedSpeedUsage} value={`${ratedSpeedUsage.toFixed(0)}%`} />
-                  </td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.ratedSpeed.toFixed(0)}</td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.peakSpeed}</td>
-                  <td className="p-1 border-r border-gray-300 px-1">
-                    <PerformanceBar type="usage" percent={peakSpeedUsage} value={`${peakSpeedUsage.toFixed(0)}%`} />
-                  </td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.peakSpeed.toFixed(0)}</td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.allowableInertiaRatio}</td>
-                  <td className="p-1 border-r border-gray-300 px-1">
-                    <PerformanceBar type="usage" percent={inertiaUsage} value={`${inertiaUsage.toFixed(0)}%`} />
-                  </td>
-                  <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{inertiaRatio.toFixed(2)}</td>
-                  <td className="p-1 px-1">
-                    <PerformanceBar type="cost" percent={motor.costIndex * 40} value={motor.costIndex.toFixed(2)} />
-                  </td>
+
+                  {tableView === 'safety' ? (
+                    <>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{effectiveRatedTorque.toFixed(2)}</td>
+                      <td className="p-1 border-r border-gray-300 px-1">
+                        <PerformanceBar type="safety" percent={ratedSafety * 50} value={ratedSafety.toFixed(2)} />
+                      </td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.ratedTorque.toFixed(2)}</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.peakTorque.toFixed(1)}</td>
+                      <td className="p-1 border-r border-gray-300 px-1">
+                        <PerformanceBar type="safety" percent={peakSafety * 25} value={peakSafety.toFixed(2)} />
+                      </td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.peakTorque.toFixed(1)}</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.ratedSpeed}</td>
+                      <td className="p-1 border-r border-gray-300 px-1">
+                        <PerformanceBar type="usage" percent={ratedSpeedUsage} value={`${ratedSpeedUsage.toFixed(0)}%`} />
+                      </td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.ratedSpeed.toFixed(0)}</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.peakSpeed}</td>
+                      <td className="p-1 border-r border-gray-300 px-1">
+                        <PerformanceBar type="usage" percent={peakSpeedUsage} value={`${peakSpeedUsage.toFixed(0)}%`} />
+                      </td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono text-gray-500">{req.peakSpeed.toFixed(0)}</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.allowableInertiaRatio}:1</td>
+                      <td className="p-1 border-r border-gray-300 px-1">
+                        <PerformanceBar type="usage" percent={inertiaUsage} value={`${inertiaUsage.toFixed(0)}%`} />
+                      </td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{inertiaRatio.toFixed(2)}:1</td>
+                      <td className="p-1 px-1">
+                        <PerformanceBar type="cost" percent={motor.costIndex * 50} value={motor.costIndex.toFixed(2)} />
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="p-1 border-r border-gray-300 text-gray-600">{motor.vendor} ({motor.series || '-'})</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.ratedPower} kW</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono font-bold text-emerald-700">{motor.ratedTorque} Nm</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.stallTorque || motor.ratedTorque} Nm</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono font-bold text-amber-700">{motor.peakTorque} Nm</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.ratedSpeed}</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.ratedCurrent} A</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.torqueConstant || (motor.ratedTorque/motor.ratedCurrent).toFixed(2)}</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.voltageConstant || 85}</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.flangeSize || 100} mm</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">$\varnothing${motor.shaftDiameter || 19}x{motor.shaftLength || 40}</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.inertia}</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono">{motor.motorMass || 6.5}</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono font-bold text-blue-900">{motor.maxRadialForce || 750} N</td>
+                      <td className="p-1 border-r border-gray-300 text-center font-mono font-bold text-blue-900">{motor.maxAxialForce || 250} N</td>
+                      <td className="p-1 border-r border-gray-300 text-center">{motor.protectionClass || 'IP65'}</td>
+                      <td className="p-1 text-center">{motor.hasBrakeOption ? `${motor.brakeTorque || 13} Nm` : 'None'}</td>
+                    </>
+                  )}
                 </tr>
               );
             })}
@@ -292,10 +343,18 @@ export const MotorDriveForm = ({
   const [vendorFilter, setVendorFilter] = useState<string>('All Vendors');
   const [searchTerm, setSearchTerm] = useState('');
   const [showTnCurve, setShowTnCurve] = useState(true);
+  const [tableView, setTableView] = useState<'safety' | 'specs'>('safety');
   const [isAddMotorOpen, setIsAddMotorOpen] = useState(false);
   const [isAddDriveOpen, setIsAddDriveOpen] = useState(false);
+  
+  // Datasheet & Explorer Modal State
+  const [datasheetModal, setDatasheetModal] = useState<{ isOpen: boolean; type: 'motor' | 'drive'; item: any }>({
+    isOpen: false,
+    type: 'motor',
+    item: null
+  });
+  const [isExplorerOpen, setIsExplorerOpen] = useState(false);
 
-  // New Custom Motor state
   const [newMotor, setNewMotor] = useState<MotorSpec>({
     vendor: 'Custom',
     model: 'MTR-Custom-1',
@@ -309,7 +368,14 @@ export const MotorDriveForm = ({
     powerFactor: 0.93,
     inertia: 2.5,
     allowableInertiaRatio: 10,
-    costIndex: 1.0
+    costIndex: 1.0,
+    motorMass: 6.0,
+    flangeSize: 100,
+    shaftDiameter: 19,
+    shaftLength: 40,
+    maxRadialForce: 750,
+    maxAxialForce: 250,
+    protectionClass: 'IP65'
   });
 
   const [newDrive, setNewDrive] = useState<DriveSpec>({
@@ -320,13 +386,12 @@ export const MotorDriveForm = ({
     pwmFrequency: 8
   });
 
-  const motorCatalog = useMemo(() => getMotorCatalog(), [isAddMotorOpen]);
-  const driveCatalog = useMemo(() => getDriveCatalog(), [isAddDriveOpen]);
+  const motorCatalog = useMemo(() => getFullMotorCatalog(), [isAddMotorOpen]);
+  const driveCatalog = useMemo(() => getFullDriveCatalog(), [isAddDriveOpen]);
 
   const motorVendors = ['All Vendors', ...Array.from(new Set(motorCatalog.map(m => m.vendor)))];
   const driveVendors = Array.from(new Set(driveCatalog.map(d => d.vendor)));
   
-  // Accurate dynamics computation including translating load mass reflection
   const dynamics = useMemo(() => calculateAxisDynamics(params), [params]);
   const appInertia = dynamics.reflectedLoadInertiaKgCm2;
   const thermalDerating = calculateThermalDerating(parseFloat(String(params.ambientTemp || 40)));
@@ -348,15 +413,19 @@ export const MotorDriveForm = ({
 
   const selectedMotor = useMemo(() => {
     return motorCatalog.find(m => m.model === params.motorModel);
-  }, [motorCatalog, params.motorModel]);
+  }, [params.motorModel, motorCatalog]);
+
+  const selectedDrive = useMemo(() => {
+    return driveCatalog.find(d => d.model === params.driveModel);
+  }, [params.driveModel, driveCatalog]);
 
   const availableDrives = useMemo(() => {
-    let drives = driveCatalog.filter(d => d.vendor === (params.driveVendor || params.motorVendor));
-    if (selectedMotor) {
-      drives = drives.filter(d => d.maxCurrent >= selectedMotor.ratedCurrent);
-    }
-    return drives.length > 0 ? drives : driveCatalog;
-  }, [driveCatalog, params.driveVendor, params.motorVendor, selectedMotor]);
+    return driveCatalog.filter(d => {
+      const matchVendor = !params.driveVendor || d.vendor === params.driveVendor;
+      const matchCurrent = !selectedMotor || d.maxCurrent >= selectedMotor.ratedCurrent;
+      return matchVendor && matchCurrent;
+    });
+  }, [driveCatalog, params.driveVendor, selectedMotor]);
 
   const handleSelectMotor = (motor: MotorSpec) => {
     onUpdate({
@@ -371,6 +440,30 @@ export const MotorDriveForm = ({
       motorInertia: motor.inertia,
       peakTorque: motor.peakTorque,
       peakSpeed: motor.peakSpeed,
+      stallTorque: motor.stallTorque,
+      stallCurrent: motor.stallCurrent,
+      peakCurrent: motor.peakCurrent,
+      torqueConstant: motor.torqueConstant,
+      voltageConstant: motor.voltageConstant,
+      windingResistance: motor.windingResistance,
+      windingInductance: motor.windingInductance,
+      electricalTimeConstant: motor.electricalTimeConstant,
+      mechanicalTimeConstant: motor.mechanicalTimeConstant,
+      thermalTimeConstant: motor.thermalTimeConstant,
+      polePairs: motor.polePairs,
+      insulationClass: motor.insulationClass,
+      coolingType: motor.coolingType,
+      motorMass: motor.motorMass,
+      flangeSize: motor.flangeSize,
+      shaftDiameter: motor.shaftDiameter,
+      shaftLength: motor.shaftLength,
+      keyway: motor.keyway,
+      maxRadialForce: motor.maxRadialForce,
+      maxAxialForce: motor.maxAxialForce,
+      protectionClass: motor.protectionClass,
+      hasBrakeOption: motor.hasBrakeOption,
+      brakeTorque: motor.brakeTorque,
+      brakeInertia: motor.brakeInertia,
       allowableInertiaRatio: motor.allowableInertiaRatio
     });
   };
@@ -383,7 +476,12 @@ export const MotorDriveForm = ({
         driveModel: firstModel.model,
         driveSupplyVoltage: firstModel.supplyVoltage,
         driveMaxCurrent: firstModel.maxCurrent,
-        pwmFrequency: firstModel.pwmFrequency
+        pwmFrequency: firstModel.pwmFrequency,
+        driveNominalBusVoltage: firstModel.nominalBusVoltage,
+        driveInternalBusCapacitance: firstModel.internalBusCapacitance,
+        driveRatedCurrent: firstModel.ratedOutputCurrent,
+        driveDimensions: firstModel.dimensions,
+        driveWeight: firstModel.weight
       });
     }
   };
@@ -395,19 +493,24 @@ export const MotorDriveForm = ({
         driveModel: e.target.value,
         driveSupplyVoltage: specs.supplyVoltage,
         driveMaxCurrent: specs.maxCurrent,
-        pwmFrequency: specs.pwmFrequency
+        pwmFrequency: specs.pwmFrequency,
+        driveNominalBusVoltage: specs.nominalBusVoltage,
+        driveInternalBusCapacitance: specs.internalBusCapacitance,
+        driveRatedCurrent: specs.ratedOutputCurrent,
+        driveDimensions: specs.dimensions,
+        driveWeight: specs.weight
       });
     }
   };
 
   const handleSaveCustomMotor = () => {
-    addCustomMotor(newMotor);
+    saveCustomMotor(newMotor);
     handleSelectMotor(newMotor);
     setIsAddMotorOpen(false);
   };
 
   const handleSaveCustomDrive = () => {
-    addCustomDrive(newDrive);
+    saveCustomDrive(newDrive);
     onUpdate({
       driveVendor: newDrive.vendor,
       driveModel: newDrive.model,
@@ -424,12 +527,28 @@ export const MotorDriveForm = ({
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <SectionHeader title="Drive Specifications & Inverter Sizing" />
-          <button 
-            onClick={() => setIsAddDriveOpen(true)}
-            className="flex items-center px-2 py-1 bg-white border border-gray-300 hover:bg-gray-50 text-xs font-bold text-gray-700 rounded shadow-sm"
-          >
-            <Plus size={12} className="mr-1 text-green-600"/> Add Custom Drive
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setIsExplorerOpen(true)}
+              className="flex items-center px-2.5 py-1 bg-white border border-gray-300 hover:bg-gray-50 text-xs font-bold text-blue-700 rounded shadow-sm"
+            >
+              <SlidersHorizontal size={13} className="mr-1.5 text-blue-600"/> Browse Drive Catalog
+            </button>
+            {selectedDrive && (
+              <button
+                onClick={() => setDatasheetModal({ isOpen: true, type: 'drive', item: selectedDrive })}
+                className="flex items-center px-2.5 py-1 bg-white border border-gray-300 hover:bg-gray-50 text-xs font-bold text-gray-700 rounded shadow-sm"
+              >
+                <FileText size={13} className="mr-1.5 text-blue-600"/> View Inverter Datasheet
+              </button>
+            )}
+            <button 
+              onClick={() => setIsAddDriveOpen(true)}
+              className="flex items-center px-2 py-1 bg-white border border-gray-300 hover:bg-gray-50 text-xs font-bold text-gray-700 rounded shadow-sm"
+            >
+              <Plus size={12} className="mr-1 text-green-600"/> Add Custom Drive
+            </button>
+          </div>
         </div>
 
         {selectedMotor && availableDrives.length === 0 && (
@@ -455,6 +574,65 @@ export const MotorDriveForm = ({
                 <InputGroup label="PWM Freq."><UnitInput value={params.pwmFrequency} onChange={()=>{}} type="frequency" readOnly /></InputGroup>
             </div>
         </div>
+
+        {/* Selected Drive Specifications Card */}
+        {selectedDrive && (
+          <div className="mt-4 p-4 bg-slate-50 border border-gray-300 rounded">
+            <div className="font-bold text-xs text-slate-800 mb-2 flex items-center">
+              <Zap size={14} className="mr-1 text-amber-600" /> Inverter Physical & Electrical Summary
+            </div>
+            <div className="grid grid-cols-4 gap-4 text-xs">
+              <div>
+                <span className="text-gray-500 text-[10px] font-bold block">DC Bus Voltage</span>
+                <span className="font-mono font-bold text-slate-800">{selectedDrive.nominalBusVoltage || 540} VDC</span>
+              </div>
+              <div>
+                <span className="text-gray-500 text-[10px] font-bold block">Internal Bus Capacitance</span>
+                <span className="font-mono font-bold text-slate-800">{selectedDrive.internalBusCapacitance || 220} $\mu$F</span>
+              </div>
+              <div>
+                <span className="text-gray-500 text-[10px] font-bold block">Dimensions ($W \times H \times D$)</span>
+                <span className="font-mono font-bold text-slate-800">
+                  {selectedDrive.dimensions ? `${selectedDrive.dimensions.width}×${selectedDrive.dimensions.height}×${selectedDrive.dimensions.depth} mm` : '50×380×270 mm'}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500 text-[10px] font-bold block">Unit Weight</span>
+                <span className="font-mono font-bold text-slate-800">{selectedDrive.weight || 4.5} kg</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modals */}
+        <ComponentDatasheetModal
+          isOpen={datasheetModal.isOpen}
+          onClose={() => setDatasheetModal({ isOpen: false, type: 'drive', item: null })}
+          type="drive"
+          drive={datasheetModal.item}
+        />
+
+        <CatalogExplorerModal
+          isOpen={isExplorerOpen}
+          onClose={() => setIsExplorerOpen(false)}
+          initialTab="drives"
+          activeAxisName={params.axisName}
+          onSelectDrive={(d) => {
+            onUpdate({
+              driveVendor: d.vendor,
+              driveModel: d.model,
+              driveSupplyVoltage: d.supplyVoltage,
+              driveMaxCurrent: d.maxCurrent,
+              pwmFrequency: d.pwmFrequency,
+              driveNominalBusVoltage: d.nominalBusVoltage,
+              driveInternalBusCapacitance: d.internalBusCapacitance,
+              driveRatedCurrent: d.ratedOutputCurrent,
+              driveDimensions: d.dimensions,
+              driveWeight: d.weight
+            });
+          }}
+          onOpenDatasheet={(t, item) => setDatasheetModal({ isOpen: true, type: t as any, item })}
+        />
 
         {/* Modal: Add Custom Drive */}
         {isAddDriveOpen && (
@@ -495,18 +673,53 @@ export const MotorDriveForm = ({
              <input 
                type="text" 
                placeholder="Filter Part No..."
-               className="pl-2 pr-2 py-1 text-xs border border-gray-300 rounded-sm focus:border-blue-500 outline-none w-80 h-6"
+               className="pl-2 pr-2 py-1 text-xs border border-gray-300 rounded-sm focus:border-blue-500 outline-none w-72 h-6"
                value={searchTerm}
                onChange={(e) => setSearchTerm(e.target.value)}
              />
           </div>
+
+          {/* Table View Toggle (Safety vs Specs) */}
+          <div className="flex items-center space-x-1 bg-white border border-gray-300 p-0.5 rounded">
+            <button
+              onClick={() => setTableView('safety')}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${tableView === 'safety' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-black'}`}
+            >
+              Safety Factors
+            </button>
+            <button
+              onClick={() => setTableView('specs')}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${tableView === 'specs' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-black'}`}
+            >
+              All Mechanical & Electrical Specs
+            </button>
+          </div>
         </div>
+
         <div className="flex items-center space-x-2">
+          {selectedMotor && (
+            <button
+              onClick={() => setDatasheetModal({ isOpen: true, type: 'motor', item: selectedMotor })}
+              className="flex items-center space-x-1 px-2 py-1 bg-white border border-gray-300 hover:bg-gray-50 text-[10px] font-bold text-blue-700 rounded-sm shadow-sm"
+              title="Open Complete Certified Datasheet"
+            >
+              <FileText size={12}/> <span>Datasheet</span>
+            </button>
+          )}
+
+          <button 
+            onClick={() => setIsExplorerOpen(true)}
+            className="flex items-center space-x-1 px-2 py-1 bg-blue-50 border border-blue-300 hover:bg-blue-100 text-[10px] font-bold text-blue-800 rounded-sm shadow-sm"
+            title="Browse Entire Catalog with Advanced Filters & Comparison"
+          >
+            <SlidersHorizontal size={12}/> <span>Catalog Explorer</span>
+          </button>
+
           <button 
             onClick={() => setShowTnCurve(!showTnCurve)} 
             className={`flex items-center space-x-1 px-2 py-1 border text-[10px] font-bold rounded-sm shadow-sm ${showTnCurve ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
           >
-            <Activity size={12}/> <span>{showTnCurve ? 'Hide T-n Curve' : 'Show T-n Curve'}</span>
+            <Activity size={12}/> <span>{showTnCurve ? 'Hide T-n' : 'Show T-n'}</span>
           </button>
           <button 
             onClick={() => setIsAddMotorOpen(true)}
@@ -527,53 +740,79 @@ export const MotorDriveForm = ({
         motors={filteredMotors} 
         selectedModel={params.motorModel} 
         onSelect={handleSelectMotor}
+        onOpenDatasheet={(m) => setDatasheetModal({ isOpen: true, type: 'motor', item: m })}
         appInertia={appInertia}
         req={req}
         derating={thermalDerating}
+        tableView={tableView}
       />
 
-      {/* Selected Component Status Bar */}
+      {/* Selected Component Status Bar & Specs Summary */}
       <div className="mt-2 p-2 bg-[#f8fafc] border border-gray-300 grid grid-cols-6 gap-3 rounded-sm shrink-0">
           <div className="flex flex-col">
              <span className="text-[9px] text-gray-500 font-bold uppercase">Selection</span>
              <span className="text-[11px] font-bold text-[#003366] truncate">{params.motorModel || 'None'}</span>
+             {selectedMotor && <span className="text-[9px] text-gray-500">Flange {selectedMotor.flangeSize}mm | {selectedMotor.motorMass}kg</span>}
           </div>
           <div className="flex flex-col border-l border-gray-300 pl-3">
              <span className="text-[9px] text-gray-500 font-bold uppercase">Rated Torque (Derated)</span>
              <span className={`text-[11px] font-mono font-bold ${params.motorModel ? ((params.ratedTorque * thermalDerating) >= req.ratedTorque ? 'text-green-600' : 'text-red-600') : ''}`}>
                {((params.ratedTorque || 0) * thermalDerating).toFixed(2)} Nm
              </span>
+             {selectedMotor && <span className="text-[9px] text-gray-500">Kt: {selectedMotor.torqueConstant || 1.4} Nm/A</span>}
           </div>
           <div className="flex flex-col border-l border-gray-300 pl-3">
              <span className="text-[9px] text-gray-500 font-bold uppercase">Peak Torque</span>
              <span className={`text-[11px] font-mono font-bold ${params.motorModel ? (params.peakTorque >= req.peakTorque ? 'text-green-600' : 'text-red-600') : ''}`}>
                {(params.peakTorque || 0).toFixed(1)} Nm
              </span>
+             {selectedMotor && <span className="text-[9px] text-gray-500">I_peak: {selectedMotor.peakCurrent || 14} A</span>}
           </div>
           <div className="flex flex-col border-l border-gray-300 pl-3">
-             <span className="text-[9px] text-gray-500 font-bold uppercase">Rated Speed</span>
-             <span className={`text-[11px] font-mono font-bold ${params.motorModel ? (params.ratedSpeed >= req.ratedSpeed ? 'text-green-600' : 'text-red-600') : ''}`}>
-               {(params.ratedSpeed || 0)} RPM
+             <span className="text-[9px] text-gray-500 font-bold uppercase">Shaft Loading Limit</span>
+             <span className="text-[11px] font-mono font-bold text-blue-900">
+               Fr: {selectedMotor?.maxRadialForce || 750} N | Fa: {selectedMotor?.maxAxialForce || 250} N
              </span>
+             {selectedMotor && <span className="text-[9px] text-gray-500">Shaft: $\varnothing${selectedMotor.shaftDiameter}x{selectedMotor.shaftLength}mm</span>}
           </div>
           <div className="flex flex-col border-l border-gray-300 pl-3">
-             <span className="text-[9px] text-gray-500 font-bold uppercase">Inertia Ratio</span>
+             <span className="text-[9px] text-gray-500 font-bold uppercase">Inertia Ratio ($J_L / J_M$)</span>
              <span className={`text-[11px] font-mono font-bold ${params.motorModel ? (appInertia / (params.motorInertia || 1) <= (params.allowableInertiaRatio || 10) ? 'text-green-600' : 'text-amber-600') : ''}`}>
                {(appInertia / (params.motorInertia || 1)).toFixed(1)} : 1
              </span>
+             <span className="text-[9px] text-gray-500">Max allowable: {params.allowableInertiaRatio || 10}:1</span>
           </div>
           <div className="flex flex-col border-l border-gray-300 pl-3">
              <span className="text-[9px] text-gray-500 font-bold uppercase">Reflected Load J_L</span>
              <span className="text-[11px] font-mono font-bold text-gray-700">
                {appInertia.toFixed(2)} kg·cm²
              </span>
+             {selectedMotor && <span className="text-[9px] text-gray-500">Motor J: {selectedMotor.inertia} kg·cm²</span>}
           </div>
       </div>
+
+      {/* Datasheet Modal */}
+      <ComponentDatasheetModal
+        isOpen={datasheetModal.isOpen}
+        onClose={() => setDatasheetModal({ isOpen: false, type: 'motor', item: null })}
+        type="motor"
+        motor={datasheetModal.item}
+      />
+
+      {/* Catalog Explorer Modal */}
+      <CatalogExplorerModal
+        isOpen={isExplorerOpen}
+        onClose={() => setIsExplorerOpen(false)}
+        initialTab="motors"
+        activeAxisName={params.axisName}
+        onSelectMotor={handleSelectMotor}
+        onOpenDatasheet={(t, item) => setDatasheetModal({ isOpen: true, type: t as any, item })}
+      />
 
       {/* Modal: Add Custom Motor */}
       {isAddMotorOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm">
-          <div className="bg-white rounded p-5 w-[420px] shadow-2xl border border-gray-300 text-xs space-y-3">
+          <div className="bg-white rounded p-5 w-[460px] shadow-2xl border border-gray-300 text-xs space-y-3">
             <h3 className="font-bold text-sm text-gray-800 border-b pb-1 flex items-center">
               <Plus size={14} className="mr-1 text-green-600"/> Add Custom Motor to Catalog
             </h3>
@@ -586,8 +825,10 @@ export const MotorDriveForm = ({
               <div><label className="text-[10px] font-bold text-gray-500">Peak Speed (RPM)</label><input type="number" className="w-full border p-1 rounded" value={newMotor.peakSpeed} onChange={e => setNewMotor({...newMotor, peakSpeed: Number(e.target.value)})}/></div>
               <div><label className="text-[10px] font-bold text-gray-500">Rotor Inertia (kg·cm²)</label><input type="number" step="0.01" className="w-full border p-1 rounded" value={newMotor.inertia} onChange={e => setNewMotor({...newMotor, inertia: Number(e.target.value)})}/></div>
               <div><label className="text-[10px] font-bold text-gray-500">Allowable Ratio</label><input type="number" className="w-full border p-1 rounded" value={newMotor.allowableInertiaRatio} onChange={e => setNewMotor({...newMotor, allowableInertiaRatio: Number(e.target.value)})}/></div>
-              <div><label className="text-[10px] font-bold text-gray-500">Rated Current (A)</label><input type="number" step="0.1" className="w-full border p-1 rounded" value={newMotor.ratedCurrent} onChange={e => setNewMotor({...newMotor, ratedCurrent: Number(e.target.value)})}/></div>
-              <div><label className="text-[10px] font-bold text-gray-500">Efficiency (%)</label><input type="number" className="w-full border p-1 rounded" value={newMotor.efficiency} onChange={e => setNewMotor({...newMotor, efficiency: Number(e.target.value)})}/></div>
+              <div><label className="text-[10px] font-bold text-gray-500">Motor Mass (kg)</label><input type="number" step="0.1" className="w-full border p-1 rounded" value={newMotor.motorMass} onChange={e => setNewMotor({...newMotor, motorMass: Number(e.target.value)})}/></div>
+              <div><label className="text-[10px] font-bold text-gray-500">Flange Size (mm)</label><input type="number" className="w-full border p-1 rounded" value={newMotor.flangeSize} onChange={e => setNewMotor({...newMotor, flangeSize: Number(e.target.value)})}/></div>
+              <div><label className="text-[10px] font-bold text-gray-500">Max Radial Force (N)</label><input type="number" className="w-full border p-1 rounded" value={newMotor.maxRadialForce} onChange={e => setNewMotor({...newMotor, maxRadialForce: Number(e.target.value)})}/></div>
+              <div><label className="text-[10px] font-bold text-gray-500">Max Axial Force (N)</label><input type="number" className="w-full border p-1 rounded" value={newMotor.maxAxialForce} onChange={e => setNewMotor({...newMotor, maxAxialForce: Number(e.target.value)})}/></div>
             </div>
             <div className="flex justify-end space-x-2 pt-3 border-t">
               <button onClick={() => setIsAddMotorOpen(false)} className="px-3 py-1 bg-gray-100 rounded text-gray-700">Cancel</button>

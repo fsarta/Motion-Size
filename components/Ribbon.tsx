@@ -48,6 +48,7 @@ interface RibbonProps {
   onOpenMaxStop?: () => void;
   onOpenProjectNotes?: () => void;
   onOpenReport?: () => void;
+  onOpenCatalog?: () => void;
   onOpenDoc?: () => void;
   onOpenAbout?: () => void;
   currentLang?: string;
@@ -248,6 +249,7 @@ export const Ribbon: React.FC<RibbonProps> = ({
         <Separator />
         
         <RibbonButton icon={<PlusSquare size={20} className="text-emerald-600" />} label="Add Axis" onClick={onAddAxis} />
+        <RibbonButton icon={<SlidersHorizontal size={20} className="text-sky-600" />} label="Catalog" onClick={onOpenCatalog} />
         <RibbonButton icon={<Table size={20} className="text-purple-600" />} label="Cam Tables" onClick={onOpenCamManager} />
         <RibbonButton icon={<Activity size={20} className="text-blue-600" />} label="System Check" onClick={onOpenSystemCheck} highlight={true} />
         <RibbonButton icon={<Box size={20} className="text-indigo-600" />} label="Project Notes" onClick={onOpenProjectNotes} />

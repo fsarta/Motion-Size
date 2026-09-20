@@ -13,6 +13,9 @@ import { ProjectNotesModal } from './components/modals/ProjectNotesModal';
 import { TechnicalReportModal } from './components/modals/TechnicalReportModal';
 import { DocModal } from './components/modals/DocModal';
 import { AboutModal } from './components/modals/AboutModal';
+import { CatalogExplorerModal } from './components/modals/CatalogExplorerModal';
+import { ComponentDatasheetModal } from './components/modals/ComponentDatasheetModal';
+import { MotorSpec, DriveSpec, GearboxSpec } from './types';
 
 import { useProjectStore } from './store/useProjectStore';
 import { downloadProjectFile, openProjectFile } from './utils/projectIO';
@@ -53,6 +56,12 @@ const App = () => {
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isDocOpen, setIsDocOpen] = useState(false);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [datasheetModal, setDatasheetModal] = useState<{ isOpen: boolean; type: 'motor' | 'drive' | 'gearbox'; item: any }>({
+    isOpen: false,
+    type: 'motor',
+    item: null
+  });
   const [currentLang, setCurrentLang] = useState<'en' | 'it'>('it');
 
   const {
@@ -130,6 +139,87 @@ const App = () => {
     return null;
   };
 
+  const handleExplorerSelectMotor = (motor: MotorSpec) => {
+    if (selectedNodeId) {
+      updateNode(selectedNodeId, {
+        motorVendor: motor.vendor,
+        motorModel: motor.model,
+        ratedSpeed: motor.ratedSpeed,
+        ratedTorque: motor.ratedTorque,
+        ratedPower: motor.ratedPower,
+        ratedCurrent: motor.ratedCurrent,
+        motorEfficiency: motor.efficiency,
+        powerFactor: motor.powerFactor,
+        motorInertia: motor.inertia,
+        peakTorque: motor.peakTorque,
+        peakSpeed: motor.peakSpeed,
+        stallTorque: motor.stallTorque,
+        stallCurrent: motor.stallCurrent,
+        peakCurrent: motor.peakCurrent,
+        torqueConstant: motor.torqueConstant,
+        voltageConstant: motor.voltageConstant,
+        windingResistance: motor.windingResistance,
+        windingInductance: motor.windingInductance,
+        electricalTimeConstant: motor.electricalTimeConstant,
+        mechanicalTimeConstant: motor.mechanicalTimeConstant,
+        thermalTimeConstant: motor.thermalTimeConstant,
+        polePairs: motor.polePairs,
+        insulationClass: motor.insulationClass,
+        coolingType: motor.coolingType,
+        motorMass: motor.motorMass,
+        flangeSize: motor.flangeSize,
+        shaftDiameter: motor.shaftDiameter,
+        shaftLength: motor.shaftLength,
+        keyway: motor.keyway,
+        maxRadialForce: motor.maxRadialForce,
+        maxAxialForce: motor.maxAxialForce,
+        protectionClass: motor.protectionClass,
+        hasBrakeOption: motor.hasBrakeOption,
+        brakeTorque: motor.brakeTorque,
+        brakeInertia: motor.brakeInertia,
+        allowableInertiaRatio: motor.allowableInertiaRatio
+      });
+    }
+  };
+
+  const handleExplorerSelectDrive = (drive: DriveSpec) => {
+    if (selectedNodeId) {
+      updateNode(selectedNodeId, {
+        driveVendor: drive.vendor,
+        driveModel: drive.model,
+        driveSupplyVoltage: drive.supplyVoltage,
+        driveMaxCurrent: drive.maxCurrent,
+        pwmFrequency: drive.pwmFrequency,
+        driveNominalBusVoltage: drive.nominalBusVoltage,
+        driveInternalBusCapacitance: drive.internalBusCapacitance,
+        driveRatedCurrent: drive.ratedOutputCurrent,
+        driveDimensions: drive.dimensions,
+        driveWeight: drive.weight
+      });
+    }
+  };
+
+  const handleExplorerSelectGearbox = (gearbox: GearboxSpec) => {
+    if (selectedNodeId) {
+      updateNode(selectedNodeId, {
+        gearboxVendor: gearbox.vendor,
+        gearboxModel: gearbox.model,
+        gearboxRatio: gearbox.ratio,
+        gearboxEfficiency: gearbox.efficiency,
+        gearboxInertia: gearbox.inertia,
+        gearboxBacklash: gearbox.backlash,
+        gearboxMaxInputSpeed: gearbox.maxInputSpeed,
+        gearboxMass: gearbox.mass,
+        gearboxNominalTorque: gearbox.nominalTorque,
+        gearboxMaxTorque: gearbox.maxAccelerationTorque,
+        gearboxMaxRadialForce: gearbox.maxRadialForce,
+        gearboxMaxAxialForce: gearbox.maxAxialForce,
+        gearboxTorsionalRigidity: gearbox.torsionalRigidity,
+        gearboxOutputShaftDiameter: gearbox.outputShaftDiameter
+      });
+    }
+  };
+
   return (
     <div className="flex flex-col h-full w-full overflow-hidden select-none">
       {/* Modals */}
@@ -175,9 +265,29 @@ const App = () => {
       <DocModal isOpen={isDocOpen} onClose={() => setIsDocOpen(false)} />
       <AboutModal isOpen={isAboutOpen} onClose={() => setIsAboutOpen(false)} />
 
+      <CatalogExplorerModal
+        isOpen={isCatalogOpen}
+        onClose={() => setIsCatalogOpen(false)}
+        activeAxisName={findNode(data, selectedNodeId)?.label || 'Selected Axis'}
+        onSelectMotor={handleExplorerSelectMotor}
+        onSelectDrive={handleExplorerSelectDrive}
+        onSelectGearbox={handleExplorerSelectGearbox}
+        onOpenDatasheet={(type, item) => setDatasheetModal({ isOpen: true, type: type as any, item })}
+      />
+
+      <ComponentDatasheetModal
+        isOpen={datasheetModal.isOpen}
+        onClose={() => setDatasheetModal({ isOpen: false, type: 'motor', item: null })}
+        type={datasheetModal.type}
+        motor={datasheetModal.type === 'motor' ? datasheetModal.item : undefined}
+        drive={datasheetModal.type === 'drive' ? datasheetModal.item : undefined}
+        gearbox={datasheetModal.type === 'gearbox' ? datasheetModal.item : undefined}
+      />
+
       {/* Main Layout */}
       <Ribbon 
         onAddAxis={addAxis} 
+        onOpenCatalog={() => setIsCatalogOpen(true)}
         onOpenCamManager={() => setIsCamManagerOpen(true)} 
         onSave={handleSave} 
         onOpen={handleOpen} 
