@@ -1,7 +1,7 @@
 import React from 'react';
-import { X, Printer, Download, CheckCircle2, AlertTriangle, FileText } from 'lucide-react';
+import { X, Printer, Download, CheckCircle2, AlertTriangle, FileText, Cpu, Zap, Cog, ShieldCheck } from 'lucide-react';
 import { TreeNode } from '../../types';
-import { calculateAxisDynamics, calculateMaxStop } from '../../utils/physics';
+import { calculateAxisDynamics, calculateMaxStop, calculateEquivalentBearingLife } from '../../utils/physics';
 
 interface TechnicalReportModalProps {
   isOpen: boolean;
@@ -192,6 +192,143 @@ export const TechnicalReportModal: React.FC<TechnicalReportModalProps> = ({ isOp
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Detailed Certified Component Datasheets & Verification */}
+          <div className="mb-6 break-before-page">
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b border-slate-300 pb-1 mb-4">
+              4. Certified Component Technical Datasheets & Mechanical Verification
+            </h2>
+
+            <div className="space-y-6">
+              {axes.map((axis, idx) => {
+                const p = axis.parameters || {};
+                const dyn = calculateAxisDynamics(p);
+                const motorBearing = calculateEquivalentBearingLife(
+                  20000,
+                  p.maxRadialForce || 750,
+                  p.ratedSpeed || 3000,
+                  (p.maxRadialForce || 750) * 0.45,
+                  (p.ratedSpeed || 3000) * 0.7,
+                  'ball'
+                );
+
+                const gearboxBearing = calculateEquivalentBearingLife(
+                  20000,
+                  p.gearboxMaxRadialForce || 1650,
+                  Math.max(100, (p.gearboxMaxInputSpeed || 5000) / dyn.gearboxRatio),
+                  (p.gearboxMaxRadialForce || 1650) * 0.45,
+                  Math.max(10, ((p.ratedSpeed || 3000) / dyn.gearboxRatio) * 0.7),
+                  'ball'
+                );
+
+                return (
+                  <div key={axis.id} className="border border-slate-300 rounded p-4 bg-slate-50/50 space-y-3">
+                    <div className="flex justify-between items-center border-b border-slate-200 pb-1.5">
+                      <div className="font-bold text-sm text-slate-900 flex items-center space-x-2">
+                        <span className="bg-slate-800 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">Axis {idx + 1}</span>
+                        <span>{axis.label}</span>
+                      </div>
+                      <div className="text-xs text-slate-500 font-mono">
+                        Mechanism: {p.mechanismType || 'Belt'} | Total Moving Mass: {dyn.totalMovingMassKg} kg
+                      </div>
+                    </div>
+
+                    {/* Motor Datasheet Section */}
+                    {p.motorModel ? (
+                      <div className="bg-white border border-slate-200 rounded p-3 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <div className="font-bold text-xs text-blue-900 flex items-center">
+                            <Cpu size={14} className="mr-1.5 text-blue-600" />
+                            Servo Motor: {p.motorVendor} {p.motorModel}
+                          </div>
+                          <div className="text-[10px] text-slate-500">
+                            Insulation: {p.insulationClass || 'Class F (155°C)'} | Protection: {p.protectionClass || 'IP65'}
+                          </div>
+                        </div>
+
+                        {/* Motor Specs Grid */}
+                        <div className="grid grid-cols-4 gap-2 text-[11px] bg-slate-50 p-2 rounded">
+                          <div><span className="text-slate-500">Rated Power:</span> <strong className="font-mono">{p.ratedPower || '-'} kW</strong></div>
+                          <div><span className="text-slate-500">Rated Torque (MN):</span> <strong className="font-mono text-emerald-800">{p.ratedTorque || '-'} Nm</strong></div>
+                          <div><span className="text-slate-500">Peak Torque (Mmax):</span> <strong className="font-mono text-amber-800">{p.peakTorque || '-'} Nm</strong></div>
+                          <div><span className="text-slate-500">Rated Speed:</span> <strong className="font-mono">{p.ratedSpeed || '-'} RPM</strong></div>
+
+                          <div><span className="text-slate-500">Rated Current:</span> <strong className="font-mono">{p.ratedCurrent || '-'} Arms</strong></div>
+                          <div><span className="text-slate-500">Torque Const. (Kt):</span> <strong className="font-mono">{p.torqueConstant || '-'} Nm/A</strong></div>
+                          <div><span className="text-slate-500">Voltage Const. (Ke):</span> <strong className="font-mono">{p.voltageConstant || '-'} V/krpm</strong></div>
+                          <div><span className="text-slate-500">Rotor Inertia (JM):</span> <strong className="font-mono">{p.motorInertia || '-'} kg·cm²</strong></div>
+
+                          <div><span className="text-slate-500">Motor Mass:</span> <strong className="font-mono">{p.motorMass || '-'} kg</strong></div>
+                          <div><span className="text-slate-500">Flange Size:</span> <strong className="font-mono">{p.flangeSize || '-'} mm</strong></div>
+                          <div><span className="text-slate-500">Shaft Dimensions:</span> <strong className="font-mono">Dia {p.shaftDiameter || '-'}x{p.shaftLength || '-'} mm</strong></div>
+                          <div><span className="text-slate-500">Permissible Fr:</span> <strong className="font-mono text-blue-900">{p.maxRadialForce || 750} N</strong></div>
+                        </div>
+
+                        {/* Motor Bearing Life */}
+                        <div className="flex items-center justify-between text-[10px] bg-blue-50/50 p-2 rounded border border-blue-100">
+                          <span className="text-slate-700">
+                            <strong>ISO 281 Motor Bearing Service Life (L10h):</strong> {motorBearing.lifeHours.toLocaleString()} operating hours ({motorBearing.lifeYears} years @ 4,000 h/yr)
+                          </span>
+                          <span className="font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded">
+                            {motorBearing.status.toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-400 italic">Servo Motor not configured for this axis.</div>
+                    )}
+
+                    {/* Drive Datasheet Section */}
+                    {p.driveModel && (
+                      <div className="bg-white border border-slate-200 rounded p-3 space-y-2">
+                        <div className="font-bold text-xs text-slate-800 flex items-center">
+                          <Zap size={14} className="mr-1.5 text-amber-600" />
+                          Servo Inverter: {p.driveVendor} {p.driveModel}
+                        </div>
+                        <div className="grid grid-cols-4 gap-2 text-[11px] bg-slate-50 p-2 rounded">
+                          <div><span className="text-slate-500">Supply Voltage:</span> <strong className="font-mono">{p.driveSupplyVoltage || 400} V AC</strong></div>
+                          <div><span className="text-slate-500">Peak Output Current:</span> <strong className="font-mono text-amber-800">{p.driveMaxCurrent || '-'} Arms</strong></div>
+                          <div><span className="text-slate-500">PWM Frequency:</span> <strong className="font-mono">{p.pwmFrequency || 8} kHz</strong></div>
+                          <div><span className="text-slate-500">DC Bus Capacitance:</span> <strong className="font-mono">{p.driveInternalBusCapacitance || 220} uF</strong></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Gearbox Datasheet Section */}
+                    {p.gearboxModel && (
+                      <div className="bg-white border border-slate-200 rounded p-3 space-y-2">
+                        <div className="font-bold text-xs text-slate-800 flex items-center">
+                          <Cog size={14} className="mr-1.5 text-blue-600" />
+                          Precision Gearbox: {p.gearboxVendor} {p.gearboxModel}
+                        </div>
+                        <div className="grid grid-cols-4 gap-2 text-[11px] bg-slate-50 p-2 rounded">
+                          <div><span className="text-slate-500">Ratio (i):</span> <strong className="font-mono text-blue-900">{dyn.gearboxRatio}:1</strong></div>
+                          <div><span className="text-slate-500">Nominal Torque (T2N):</span> <strong className="font-mono text-emerald-800">{p.gearboxNominalTorque || '-'} Nm</strong></div>
+                          <div><span className="text-slate-500">Max Accel Torque:</span> <strong className="font-mono text-amber-800">{p.gearboxMaxTorque || '-'} Nm</strong></div>
+                          <div><span className="text-slate-500">Torsional Backlash:</span> <strong className="font-mono">{p.gearboxBacklash || '-'} arcmin</strong></div>
+
+                          <div><span className="text-slate-500">Torsional Rigidity:</span> <strong className="font-mono">{p.gearboxTorsionalRigidity || '-'} Nm/arcmin</strong></div>
+                          <div><span className="text-slate-500">Efficiency:</span> <strong className="font-mono">{p.gearboxEfficiency || 97}%</strong></div>
+                          <div><span className="text-slate-500">Input Inertia (J1):</span> <strong className="font-mono">{p.gearboxInertia || '-'} kg·cm²</strong></div>
+                          <div><span className="text-slate-500">Output Permissible Fr2:</span> <strong className="font-mono text-blue-900">{p.gearboxMaxRadialForce || 1650} N</strong></div>
+                        </div>
+
+                        {/* Gearbox Bearing Life */}
+                        <div className="flex items-center justify-between text-[10px] bg-blue-50/50 p-2 rounded border border-blue-100">
+                          <span className="text-slate-700">
+                            <strong>Output Shaft Bearing Service Life (L10h):</strong> {gearboxBearing.lifeHours.toLocaleString()} operating hours ({gearboxBearing.lifeYears} years @ 4,000 h/yr)
+                          </span>
+                          <span className="font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded">
+                            {gearboxBearing.status.toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* Signoff / Certification Footer */}

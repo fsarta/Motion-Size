@@ -6,7 +6,8 @@ import {
   calculateThermalDerating,
   calculateMaxStop,
   calculateRegenEnergyAndResistor,
-  solveScaraIK
+  solveScaraIK,
+  calculateEquivalentBearingLife
 } from './physics';
 import { MotionLaws } from './motionLaws';
 import { simulateMotion } from '../engines/motionWorker';
@@ -141,5 +142,22 @@ describe('Physics Utilities', () => {
     expect(startPoint.vel).toBeCloseTo(0, 3);
     expect(endPoint.vel).toBeCloseTo(0, 3);
     expect(endPoint.pos).toBeCloseTo(100, 1);
+  });
+
+  it('calculates ISO 281 theoretical bearing life (L10h) correctly', () => {
+    // When operating at catalog radial load and speed, life equals nominal catalog life
+    const nominalRes = calculateEquivalentBearingLife(20000, 1000, 3000, 1000, 3000, 'ball');
+    expect(nominalRes.lifeHours).toBe(20000);
+    expect(nominalRes.status).toBe('optimal');
+
+    // When operating at half the permissible radial load, life increases by (1000/500)^3 = 8x
+    const halfLoadRes = calculateEquivalentBearingLife(10000, 1000, 3000, 500, 3000, 'ball');
+    expect(halfLoadRes.lifeHours).toBe(80000);
+
+    // When severely overloaded, life drops below 10000h and triggers critical status
+    const overloadedRes = calculateEquivalentBearingLife(20000, 1000, 3000, 2000, 3000, 'ball');
+    expect(overloadedRes.lifeHours).toBeLessThan(5000);
+    expect(overloadedRes.status).toBe('critical');
+    expect(overloadedRes.warningMessage).toBeDefined();
   });
 });

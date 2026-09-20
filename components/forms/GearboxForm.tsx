@@ -5,6 +5,7 @@ import { GearboxSpec } from '../../types';
 import { Sparkles, Edit3, Settings, FileText, SlidersHorizontal, CheckCircle2, AlertTriangle, Cog, ShieldCheck, Ruler } from 'lucide-react';
 import { ComponentDatasheetModal } from '../modals/ComponentDatasheetModal';
 import { CatalogExplorerModal } from '../modals/CatalogExplorerModal';
+import { calculateEquivalentBearingLife } from '../../utils/physics';
 
 export const GearboxForm = ({ params, onUpdate }: { params: any, onUpdate: (p: any) => void }) => {
   const [isCustomMode, setIsCustomMode] = useState<boolean>(params.gearboxVendor === 'Custom');
@@ -82,6 +83,20 @@ export const GearboxForm = ({ params, onUpdate }: { params: any, onUpdate: (p: a
   const estimatedRadialForceN = driverDiaM > 0 ? (2 * loadTorqueNm) / driverDiaM : 0;
   const permissibleRadialForceN = selectedGearbox?.maxRadialForce || params.gearboxMaxRadialForce || 1650;
   const isRadialSafe = estimatedRadialForceN <= permissibleRadialForceN;
+
+  // Dynamic Gearbox Output Bearing Service Life (ISO 281 L10h)
+  const actualGearboxRadialForceN = estimatedRadialForceN > 0 ? estimatedRadialForceN : permissibleRadialForceN * 0.45;
+  const avgOutputSpeedRpm = Math.max(1, (parseFloat(String(params.ratedSpeed || 3000))) / ratioVal);
+  const gearboxBearingLife = useMemo(() => {
+    return calculateEquivalentBearingLife(
+      selectedGearbox?.serviceLife || 20000,
+      permissibleRadialForceN,
+      Math.max(100, (selectedGearbox?.nominalInputSpeed || 3700) / ratioVal),
+      actualGearboxRadialForceN,
+      avgOutputSpeedRpm,
+      'ball'
+    );
+  }, [selectedGearbox, permissibleRadialForceN, actualGearboxRadialForceN, ratioVal, avgOutputSpeedRpm]);
 
   return (
     <div className="space-y-4">
@@ -243,20 +258,38 @@ export const GearboxForm = ({ params, onUpdate }: { params: any, onUpdate: (p: a
             </div>
           </div>
 
-          {/* Radial Loading Verification */}
-          {estimatedRadialForceN > 0 && (
-            <div className="bg-slate-50 border-t border-gray-200 px-3 py-2 flex items-center justify-between text-xs">
+          {/* Radial Loading & ISO 281 Bearing Life Verification */}
+          <div className="bg-slate-50 border-t border-gray-200 px-3 py-2 space-y-1.5 text-xs">
+            <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 {isRadialSafe ? <CheckCircle2 size={15} className="text-green-600"/> : <AlertTriangle size={15} className="text-amber-600"/>}
                 <span className="text-slate-700">
-                  Estimated Output Shaft Radial Force: <strong>{estimatedRadialForceN.toFixed(0)} N</strong> (Limit: {permissibleRadialForceN} N)
+                  Estimated Radial Force: <strong>{estimatedRadialForceN > 0 ? estimatedRadialForceN.toFixed(0) : '-'} N</strong> (Permissible Limit: {permissibleRadialForceN} N)
                 </span>
               </div>
-              <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${isRadialSafe ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-                {((estimatedRadialForceN / permissibleRadialForceN) * 100).toFixed(0)}% Radial Capacity
+              {estimatedRadialForceN > 0 && (
+                <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${isRadialSafe ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                  {((estimatedRadialForceN / permissibleRadialForceN) * 100).toFixed(0)}% Radial Capacity
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] pt-1 border-t border-gray-200 text-slate-600">
+              <div className="flex items-center space-x-1.5">
+                <ShieldCheck size={14} className="text-blue-600" />
+                <span>Output Bearing Life (ISO 281 L10h):</span>
+                <strong className="text-blue-900 font-mono">{gearboxBearingLife.lifeHours.toLocaleString()} hours</strong>
+                <span className="text-gray-400">({gearboxBearingLife.lifeYears} operating years @ 4,000 h/yr)</span>
+              </div>
+              <span className={`px-2 py-0.2 rounded font-bold text-[9px] ${
+                gearboxBearingLife.status === 'optimal' ? 'bg-green-100 text-green-800 border border-green-200' :
+                gearboxBearingLife.status === 'acceptable' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                'bg-red-100 text-red-800 border border-red-200'
+              }`}>
+                {gearboxBearingLife.status.toUpperCase()}
               </span>
             </div>
-          )}
+          </div>
         </div>
       )}
 

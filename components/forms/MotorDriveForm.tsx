@@ -3,7 +3,7 @@ import { Search, Filter, AlertTriangle, Activity, Plus, CheckCircle2, XCircle, F
 import { UnitInput, InputGroup, Select, SectionHeader } from '../Common';
 import { getFullMotorCatalog, getFullDriveCatalog, saveCustomMotor, saveCustomDrive } from '../../catalogData';
 import { MotorSpec, DriveSpec, SizingMetrics } from '../../types';
-import { calculateAxisDynamics, calculateThermalDerating } from '../../utils/physics';
+import { calculateAxisDynamics, calculateThermalDerating, calculateEquivalentBearingLife } from '../../utils/physics';
 import { ComponentDatasheetModal } from '../modals/ComponentDatasheetModal';
 import { CatalogExplorerModal } from '../modals/CatalogExplorerModal';
 
@@ -403,6 +403,23 @@ export const MotorDriveForm = ({
     peakSpeed: sizingMetrics?.peakSpeed ?? 2865
   }), [sizingMetrics]);
 
+  // Dynamic Bearing Life (ISO 281 L10h) based on equivalent radial load spectrum
+  const driverDiaM = (parseFloat(String(params.driverDiameter || params.pinionDiameter || 40))) / 1000;
+  const actualMotorRadialForceN = driverDiaM > 0 
+    ? (2 * req.peakTorque) / driverDiaM 
+    : 320;
+  const avgOperatingSpeedRpm = req.ratedSpeed || 2000;
+  const motorBearingLife = useMemo(() => {
+    return calculateEquivalentBearingLife(
+      20000,
+      params.maxRadialForce || 750,
+      params.ratedSpeed || 3000,
+      actualMotorRadialForceN,
+      avgOperatingSpeedRpm,
+      'ball'
+    );
+  }, [params.maxRadialForce, params.ratedSpeed, actualMotorRadialForceN, avgOperatingSpeedRpm]);
+
   const filteredMotors = useMemo(() => {
     return motorCatalog.filter(m => {
       const matchVendor = vendorFilter === 'All Vendors' || m.vendor === vendorFilter;
@@ -790,6 +807,42 @@ export const MotorDriveForm = ({
              {selectedMotor && <span className="text-[9px] text-gray-500">Motor J: {selectedMotor.inertia} kg·cm²</span>}
           </div>
       </div>
+
+      {/* Dynamic Bearing Life (ISO 281 L10h) Card */}
+      {selectedMotor && (
+        <div className="mt-2 p-2.5 bg-white border border-gray-300 rounded-sm shrink-0 flex items-center justify-between shadow-sm">
+          <div className="flex items-center space-x-3">
+            <div className="p-1.5 bg-blue-50 border border-blue-200 rounded text-blue-700">
+              <ShieldCheck size={16} />
+            </div>
+            <div>
+              <div className="font-bold text-[11px] text-gray-800 flex items-center space-x-2">
+                <span>Motor Bearing Theoretical Service Life (ISO 281 L10h)</span>
+                <span className={`px-2 py-0.2 text-[9px] font-bold rounded ${
+                  motorBearingLife.status === 'optimal' ? 'bg-green-100 text-green-800 border border-green-200' :
+                  motorBearingLife.status === 'acceptable' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                  'bg-red-100 text-red-800 border border-red-200'
+                }`}>
+                  {motorBearingLife.status.toUpperCase()}
+                </span>
+              </div>
+              <div className="text-[10px] text-gray-500 space-x-2">
+                <span>Equiv. Radial Load: <strong className="text-gray-700">{motorBearingLife.equivalentRadialForceN} N</strong> (Permissible: {selectedMotor.maxRadialForce || 750} N)</span>
+                <span>•</span>
+                <span>Avg. Speed: <strong className="text-gray-700">{motorBearingLife.averageSpeedRpm} RPM</strong></span>
+                <span>•</span>
+                <span>Service Life: <strong className="text-blue-900 font-mono">{motorBearingLife.lifeHours.toLocaleString()} hours</strong> ({motorBearingLife.lifeYears} operating years @ 4,000 h/yr)</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setDatasheetModal({ isOpen: true, type: 'motor', item: selectedMotor })}
+            className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center px-2 py-1 bg-blue-50 border border-blue-200 rounded"
+          >
+            <FileText size={11} className="mr-1"/> Full Technical Datasheet
+          </button>
+        </div>
+      )}
 
       {/* Datasheet Modal */}
       <ComponentDatasheetModal

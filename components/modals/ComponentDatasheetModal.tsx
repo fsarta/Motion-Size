@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, Printer, Download, Zap, Cog, Cpu, ShieldCheck, Gauge, Ruler, Layers, AlertCircle, CheckCircle } from 'lucide-react';
 import { MotorSpec, DriveSpec, GearboxSpec } from '../../types';
+import { calculateEquivalentBearingLife } from '../../utils/physics';
 
 interface ComponentDatasheetModalProps {
   isOpen: boolean;
@@ -24,6 +25,30 @@ export const ComponentDatasheetModal: React.FC<ComponentDatasheetModalProps> = (
   appliedAxialForce = 0
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'electrical' | 'mechanical' | 'drawings'>('overview');
+
+  const motorBearingLife = useMemo(() => {
+    if (!motor) return null;
+    return calculateEquivalentBearingLife(
+      20000,
+      motor.maxRadialForce || 750,
+      motor.ratedSpeed || 3000,
+      appliedRadialForce > 0 ? appliedRadialForce : (motor.maxRadialForce || 750) * 0.45,
+      (motor.ratedSpeed || 3000) * 0.7,
+      'ball'
+    );
+  }, [motor, appliedRadialForce]);
+
+  const gearboxBearingLife = useMemo(() => {
+    if (!gearbox) return null;
+    return calculateEquivalentBearingLife(
+      gearbox.serviceLife || 20000,
+      gearbox.maxRadialForce || 1650,
+      (gearbox.nominalInputSpeed || 3700) / (gearbox.ratio || 1),
+      appliedRadialForce > 0 ? appliedRadialForce : (gearbox.maxRadialForce || 1650) * 0.45,
+      ((gearbox.nominalInputSpeed || 3700) / (gearbox.ratio || 1)) * 0.7,
+      'ball'
+    );
+  }, [gearbox, appliedRadialForce]);
 
   if (!isOpen) return null;
 
@@ -280,6 +305,47 @@ export const ComponentDatasheetModal: React.FC<ComponentDatasheetModalProps> = (
                   </div>
                 </div>
               )}
+
+              {/* Motor Bearing Service Life (ISO 281 L10h) Assessment */}
+              {motorBearingLife && (
+                <div className="bg-slate-50 border border-gray-300 p-3 rounded">
+                  <div className="font-bold text-xs text-slate-800 flex items-center justify-between mb-2">
+                    <span className="flex items-center">
+                      <ShieldCheck size={16} className="text-blue-600 mr-1.5" /> Motor Bearing Expected Service Life (ISO 281 L10h Standard)
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      motorBearingLife.status === 'optimal' ? 'bg-green-100 text-green-800 border border-green-200' :
+                      motorBearingLife.status === 'acceptable' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                      'bg-red-100 text-red-800 border border-red-200'
+                    }`}>
+                      {motorBearingLife.status.toUpperCase()} STATUS
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <span className="text-gray-500 text-[10px] block">Equiv. Dynamic Radial Force</span>
+                      <strong className="font-mono">{motorBearingLife.equivalentRadialForceN} N</strong>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-[10px] block">Mean Operating Speed</span>
+                      <strong className="font-mono">{motorBearingLife.averageSpeedRpm} RPM</strong>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-[10px] block">Calculated Service Life (L10h)</span>
+                      <strong className="font-mono text-blue-900">{motorBearingLife.lifeHours.toLocaleString()} hours</strong>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-[10px] block">Years of Operation</span>
+                      <strong className="font-mono text-emerald-800">{motorBearingLife.lifeYears} years (4,000 h/yr)</strong>
+                    </div>
+                  </div>
+                  {motorBearingLife.warningMessage && (
+                    <div className="text-[10px] text-amber-700 mt-2 bg-amber-50 p-1.5 rounded border border-amber-200">
+                      {motorBearingLife.warningMessage}
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -448,6 +514,42 @@ export const ComponentDatasheetModal: React.FC<ComponentDatasheetModalProps> = (
                   </tbody>
                 </table>
               </div>
+
+              {/* Gearbox Output Bearing Service Life (ISO 281 L10h) Assessment */}
+              {gearboxBearingLife && (
+                <div className="bg-slate-50 border border-gray-300 p-3 rounded mt-3">
+                  <div className="font-bold text-xs text-slate-800 flex items-center justify-between mb-2">
+                    <span className="flex items-center">
+                      <ShieldCheck size={16} className="text-blue-600 mr-1.5" /> Output Shaft Bearing Service Life (ISO 281 L10h Standard)
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      gearboxBearingLife.status === 'optimal' ? 'bg-green-100 text-green-800 border border-green-200' :
+                      gearboxBearingLife.status === 'acceptable' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                      'bg-red-100 text-red-800 border border-red-200'
+                    }`}>
+                      {gearboxBearingLife.status.toUpperCase()} STATUS
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <span className="text-gray-500 text-[10px] block">Equiv. Output Radial Load</span>
+                      <strong className="font-mono">{gearboxBearingLife.equivalentRadialForceN} N</strong>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-[10px] block">Mean Output Speed</span>
+                      <strong className="font-mono">{gearboxBearingLife.averageSpeedRpm} RPM</strong>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-[10px] block">Calculated Service Life (L10h)</span>
+                      <strong className="font-mono text-blue-900">{gearboxBearingLife.lifeHours.toLocaleString()} hours</strong>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-[10px] block">Years of Operation</span>
+                      <strong className="font-mono text-emerald-800">{gearboxBearingLife.lifeYears} years (4,000 h/yr)</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
 

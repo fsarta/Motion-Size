@@ -438,3 +438,66 @@ export function solveScaraIK(
     reachable: true
   };
 }
+
+export interface BearingLifeResult {
+  equivalentRadialForceN: number;
+  averageSpeedRpm: number;
+  lifeHours: number;
+  lifeYears: number; // based on 4000 operating hours per year (2 shifts x 250 days)
+  status: 'optimal' | 'acceptable' | 'critical';
+  warningMessage?: string;
+}
+
+/**
+ * Calculates bearing theoretical service life (L10h) based on ISO 281 dynamic load spectrum.
+ * 
+ * L10h = L10h_catalog * (n_catalog / n_avg) * (F_r_catalog / F_r_eq)^p
+ * 
+ * where p = 3 for ball bearings (standard for servo motors and planetary output)
+ */
+export function calculateEquivalentBearingLife(
+  catalogNominalLifeHours: number = 20000,
+  catalogPermissibleRadialForceN: number = 1000,
+  catalogSpeedRpm: number = 3000,
+  actualRadialForceN: number = 500,
+  actualAverageSpeedRpm: number = 1500,
+  bearingType: 'ball' | 'roller' = 'ball'
+): BearingLifeResult {
+  const p = bearingType === 'ball' ? 3.0 : 10.0 / 3.0;
+
+  const nAvg = Math.max(actualAverageSpeedRpm, 1);
+  const nCat = Math.max(catalogSpeedRpm, 100);
+  const frPerm = Math.max(catalogPermissibleRadialForceN, 1);
+  const frEq = Math.max(actualRadialForceN, 1);
+
+  // Speed factor: lower average speed increases bearing lifetime proportionally
+  const speedFactor = nCat / nAvg;
+  // Load factor: lifetime depends on the p-th power of load ratio
+  const loadFactor = Math.pow(frPerm / frEq, p);
+
+  let lifeHours = catalogNominalLifeHours * speedFactor * loadFactor;
+  // Cap at grease/lubricant fatigue limit (100,000 h)
+  lifeHours = Math.min(Math.max(lifeHours, 50), 100000);
+
+  const lifeYears = parseFloat((lifeHours / 4000).toFixed(1)); // 4000 h/year = 16h/day * 250d
+
+  let status: 'optimal' | 'acceptable' | 'critical' = 'optimal';
+  let warningMessage: string | undefined = undefined;
+
+  if (lifeHours < 10000) {
+    status = 'critical';
+    warningMessage = 'Critical bearing life (< 10,000 h). Risk of premature fatigue; consider reducing radial load or selecting larger frame size.';
+  } else if (lifeHours < 20000) {
+    status = 'acceptable';
+    warningMessage = 'Acceptable bearing life, but below 20,000 h standard industrial target. Periodic maintenance recommended.';
+  }
+
+  return {
+    equivalentRadialForceN: parseFloat(frEq.toFixed(1)),
+    averageSpeedRpm: parseFloat(nAvg.toFixed(0)),
+    lifeHours: parseFloat(lifeHours.toFixed(0)),
+    lifeYears,
+    status,
+    warningMessage
+  };
+}
