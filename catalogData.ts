@@ -8249,6 +8249,7 @@ const CUSTOM_GEARBOXES_KEY = 'motion_size_custom_gearboxes';
 
 export function getCustomMotors(): MotorSpec[] {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
     const stored = localStorage.getItem(CUSTOM_MOTORS_KEY);
     return stored ? JSON.parse(stored) : [];
   } catch (e) {
@@ -8259,6 +8260,7 @@ export function getCustomMotors(): MotorSpec[] {
 
 export function saveCustomMotor(motor: MotorSpec): void {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
     const current = getCustomMotors();
     const updated = [...current.filter(m => !(m.vendor === motor.vendor && m.model === motor.model)), motor];
     localStorage.setItem(CUSTOM_MOTORS_KEY, JSON.stringify(updated));
@@ -8273,6 +8275,7 @@ export function getFullMotorCatalog(): MotorSpec[] {
 
 export function getCustomDrives(): DriveSpec[] {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
     const stored = localStorage.getItem(CUSTOM_DRIVES_KEY);
     return stored ? JSON.parse(stored) : [];
   } catch (e) {
@@ -8283,6 +8286,7 @@ export function getCustomDrives(): DriveSpec[] {
 
 export function saveCustomDrive(drive: DriveSpec): void {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
     const current = getCustomDrives();
     const updated = [...current.filter(d => !(d.vendor === drive.vendor && d.model === drive.model)), drive];
     localStorage.setItem(CUSTOM_DRIVES_KEY, JSON.stringify(updated));
@@ -8297,6 +8301,7 @@ export function getFullDriveCatalog(): DriveSpec[] {
 
 export function getCustomGearboxes(): GearboxSpec[] {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
     const stored = localStorage.getItem(CUSTOM_GEARBOXES_KEY);
     return stored ? JSON.parse(stored) : [];
   } catch (e) {
@@ -8307,6 +8312,7 @@ export function getCustomGearboxes(): GearboxSpec[] {
 
 export function saveCustomGearbox(gearbox: GearboxSpec): void {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
     const current = getCustomGearboxes();
     const updated = [...current.filter(g => !(g.vendor === gearbox.vendor && g.model === gearbox.model)), gearbox];
     localStorage.setItem(CUSTOM_GEARBOXES_KEY, JSON.stringify(updated));

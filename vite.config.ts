@@ -9,6 +9,13 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
         allowedHosts: true,
+        cors: true,
+      },
+      preview: {
+        port: 3000,
+        host: '0.0.0.0',
+        allowedHosts: true,
+        cors: true,
       },
       plugins: [react(), tailwindcss()],
       resolve: {

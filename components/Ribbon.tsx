@@ -3,7 +3,8 @@ import {
   File, FolderOpen, Save, Printer, Settings, 
   Activity, Play, StopCircle, Calculator, 
   HelpCircle, Box, Zap, PlusSquare, Table,
-  Undo2, Redo2, Wand2, Boxes, Check, Globe
+  Undo2, Redo2, Wand2, Boxes, Check, Globe,
+  SlidersHorizontal
 } from 'lucide-react';
 import { useProjectStore } from '../store/useProjectStore';
 
@@ -66,6 +67,7 @@ export const Ribbon: React.FC<RibbonProps> = ({
   onOpenMaxStop,
   onOpenProjectNotes,
   onOpenReport,
+  onOpenCatalog,
   onOpenDoc,
   onOpenAbout,
   currentLang = 'en',

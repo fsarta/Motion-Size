@@ -81,6 +81,7 @@ const App = () => {
     toggleNode,
     addAxis,
     addGroup,
+    updateNode,
     deleteNode,
     pasteNode,
     moveNode,

@@ -8,17 +8,17 @@ import { ConfirmationModal } from './ConfirmationModal';
 export const CamTableManagerModal = ({ 
     isOpen, 
     onClose, 
-    camTables, 
+    camTables = [], 
     onAdd, 
-    onDelete,
-    onUpdateTable
+    onDelete, 
+    onUpdateTable 
 }: { 
     isOpen: boolean, 
     onClose: () => void, 
-    camTables: CamTable[], 
-    onAdd: (name: string) => void, 
-    onDelete: (id: string) => void,
-    onUpdateTable: (table: CamTable) => void
+    camTables?: CamTable[], 
+    onAdd?: (name: string) => void, 
+    onDelete?: (id: string) => void,
+    onUpdateTable?: (table: CamTable) => void
 }) => {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
