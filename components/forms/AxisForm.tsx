@@ -122,9 +122,12 @@ export const AxisForm = ({ params, onUpdate, availableMasters, camTables }: { pa
              {params.profileType === 'Camming' && (
                 <InputGroup label="Cam Table">
                    <Select 
-                      value={params.camTableId || (camOptions[0] ?? '')} 
+                      value={params.camTableName || params.camTableId || (camOptions[0] ?? '')} 
                       options={camOptions} 
-                      onChange={(e) => handleChange('camTableId', e.target.value)} 
+                      onChange={(e) => {
+                        handleChange('camTableName', e.target.value);
+                        handleChange('camTableId', e.target.value);
+                      }} 
                    />
                 </InputGroup>
              )}

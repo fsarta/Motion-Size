@@ -34,7 +34,25 @@ const DynamicKinematicsBuilder = ({ params, onUpdate, axes, robotType, currentDo
   }
 
   const updateList = (newList: DynAxis[]) => {
-    onUpdate({ dynamicAxes: newList });
+    const jointMapping: Record<string, string> = {};
+    newList.forEach((ax, idx) => {
+      if (ax.physicalAxisId) {
+        jointMapping[ax.logicalJoint] = ax.physicalAxisId;
+        jointMapping[`J${idx + 1}`] = ax.physicalAxisId;
+      }
+    });
+    onUpdate({ dynamicAxes: newList, jointMapping });
+  };
+
+  const autoMapAll = () => {
+    const newList = configList.map((ax, idx) => {
+      const matchAxis = axes[idx];
+      return {
+        ...ax,
+        physicalAxisId: matchAxis ? matchAxis.id : ax.physicalAxisId
+      };
+    });
+    updateList(newList);
   };
 
   const addAxis = (type: 'main' | 'prime' | 'aux', logicalJoint: string = 'J1 (X)', parentIndex?: number) => {
@@ -87,6 +105,16 @@ const DynamicKinematicsBuilder = ({ params, onUpdate, axes, robotType, currentDo
 
   return (
     <div className="space-y-4">
+      {axes.length > 0 && (
+        <div className="flex justify-end">
+          <button 
+            onClick={autoMapAll}
+            className="text-xs px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded font-medium"
+          >
+            Auto-Map Group Axes to Robot Joints
+          </button>
+        </div>
+      )}
       <div className="bg-white border border-gray-200 rounded p-4 space-y-3">
         {configList.map((ax, idx) => (
           <div key={ax.id} className={`flex items-center space-x-2 ${ax.type === 'prime' ? 'pl-8 border-l-2 border-blue-200' : ''} ${ax.type === 'aux' ? '-mx-2 px-2 py-1.5 bg-gray-50 rounded border border-gray-100' : ''}`}>

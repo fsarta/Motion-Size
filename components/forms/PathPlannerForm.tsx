@@ -3,6 +3,7 @@ import { Plus, Trash2, Clock, PlayCircle } from 'lucide-react';
 import { TreeNode } from '../../types';
 import { useProjectStore } from '../../store/useProjectStore';
 import { IsometricTrajectory } from './IsometricTrajectory';
+import { solveScaraIK } from '../../utils/physics';
 
 export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, onUpdate: (p: any) => void, groupNode: TreeNode }) => {
   const { updateNode } = useProjectStore();
@@ -104,29 +105,74 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
   }, [pathData, speedOverride]);
 
   const handleBuildProfiles = () => {
-    if (!params.jointMapping || Object.keys(params.jointMapping).length === 0) {
-      alert("Please map joints to axes in the 'Robotic Kinematics' tab first.");
+    // Resolve mapping from params.jointMapping or params.dynamicAxes or fallback to group children
+    let jointMapping = params.jointMapping || {};
+    
+    if (Object.keys(jointMapping).length === 0 && Array.isArray(params.dynamicAxes)) {
+      jointMapping = {};
+      params.dynamicAxes.forEach((ax: any, idx: number) => {
+        if (ax.physicalAxisId) {
+          jointMapping[ax.logicalJoint] = ax.physicalAxisId;
+          jointMapping[`J${idx + 1}`] = ax.physicalAxisId;
+        }
+      });
+    }
+
+    const childAxes = groupNode.children?.filter(c => c.type === 'axis') || [];
+    if (Object.keys(jointMapping).length === 0 && childAxes.length > 0) {
+      // Auto fallback to child axes
+      childAxes.forEach((ax, idx) => {
+        jointMapping[`J${idx + 1}`] = ax.id;
+      });
+    }
+
+    if (Object.keys(jointMapping).length === 0) {
+      alert("No physical axes found. Please add axes to this group or map them in the 'Robotic Kinematics' tab first.");
       return;
     }
 
-    const joints = Object.keys(params.jointMapping); // ['J1', 'J2', ...]
+    const robotType = params.robotType || 'Scara';
+    const isScara = robotType === 'Scara';
+    const l1 = Number(params.scaraL1 || 250);
+    const l2 = Number(params.scaraL2 || 250);
+
+    // Compute joint trajectories for each waypoint
+    const jointPoints: Record<string, number[]> = {};
     const coordinateKeys = ['x', 'y', 'z', 'rx', 'ry', 'rz'];
 
-    joints.forEach((joint, idx) => {
-      const axisId = params.jointMapping[joint];
-      if (!axisId) return;
+    const targetJoints = Array.from(new Set(Object.values(jointMapping))) as string[];
 
-      const coordKey = coordinateKeys[idx] || 'x';
+    targetJoints.forEach((axisId, idx) => {
+      jointPoints[axisId] = [];
+      
+      for (let i = 0; i < pathData.length; i++) {
+        const p = pathData[i];
+        if (isScara) {
+          const ik = solveScaraIK(p.x || 0, p.y || 0, p.z || 0, p.rz || 0, l1, l2);
+          if (idx === 0) jointPoints[axisId].push(ik.theta1Deg);
+          else if (idx === 1) jointPoints[axisId].push(ik.theta2Deg);
+          else if (idx === 2) jointPoints[axisId].push(ik.zMm);
+          else if (idx === 3) jointPoints[axisId].push(ik.rollDeg);
+          else jointPoints[axisId].push(0);
+        } else {
+          // Gantry / Cartesian direct mapping
+          const k = coordinateKeys[idx] || 'x';
+          jointPoints[axisId].push(p[k] || 0);
+        }
+      }
+    });
+
+    targetJoints.forEach((axisId) => {
+      const positions = jointPoints[axisId] || [];
       const motionProfile = [];
 
       for (let i = 1; i < pathData.length; i++) {
-        const p0 = pathData[i - 1];
-        const p1 = pathData[i];
-        
-        const delta = (p1[coordKey] || 0) - (p0[coordKey] || 0);
+        const p0Pos = positions[i - 1] ?? 0;
+        const p1Pos = positions[i] ?? 0;
+        const delta = p1Pos - p0Pos;
         const seg = cycleEstimation.segments[i - 1];
-        
-        if (seg.moveTime > 0) {
+
+        if (seg && seg.moveTime > 0) {
           motionProfile.push({
             id: crypto.randomUUID(),
             type: "S-Curve",
@@ -137,9 +183,8 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
             calcTarget: "velocity"
           });
         }
-        
-        // 2. Dwell segment
-        if (seg.dwell > 0) {
+
+        if (seg && seg.dwell > 0) {
           motionProfile.push({
             id: crypto.randomUUID(),
             type: "Dwell/Traverse",
@@ -155,7 +200,7 @@ export const PathPlannerForm = ({ params, onUpdate, groupNode }: { params: any, 
       updateNode(axisId, { motionProfileData: JSON.stringify(motionProfile), profileType: 'Time Based' });
     });
 
-    alert("Motion profiles generated successfully for all mapped axes! Check the 'Motion Profile' tab on each axis.");
+    alert("Motion profiles generated successfully for all mapped axes! Check the 'Motion Profile' tab on each axis to inspect simulated dynamics.");
   };
 
   const [showVelocityHeatmap, setShowVelocityHeatmap] = useState(true);

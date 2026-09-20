@@ -125,6 +125,7 @@ interface TreeViewProps {
   onSelect: (id: string) => void;
   selectedId: string;
   onAddGroup: () => void;
+  onAddAxis?: () => void;
   onDeleteNode: (id: string) => void;
   onCopyNode: (id: string) => void;
   onCutNode: (id: string) => void;
@@ -139,6 +140,7 @@ export const TreeView: React.FC<TreeViewProps> = ({
   onSelect, 
   selectedId, 
   onAddGroup,
+  onAddAxis,
   onDeleteNode,
   onCopyNode,
   onCutNode,
@@ -245,10 +247,18 @@ export const TreeView: React.FC<TreeViewProps> = ({
         {/* Empty area click handling for adding groups */}
         <div className="h-full min-h-[50px]" onContextMenu={handleGlobalContextMenu}></div>
       </div>
-      <div className="p-1 border-t border-gray-300 bg-gray-50" onContextMenu={(e) => e.stopPropagation()}>
+      <div className="p-1 border-t border-gray-300 bg-gray-50 flex space-x-1" onContextMenu={(e) => e.stopPropagation()}>
+        <button 
+          onClick={onAddAxis}
+          className="flex-1 flex items-center justify-center py-1 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-sm font-semibold"
+          title="Add a new axis to selected or primary group"
+        >
+          <Plus size={12} className="mr-1" /> Add Axis
+        </button>
         <button 
           onClick={onAddGroup}
-          className="flex items-center justify-center w-full py-1 text-xs text-gray-700 hover:bg-gray-200 border border-transparent hover:border-gray-300 rounded-sm"
+          className="flex-1 flex items-center justify-center py-1 text-xs text-gray-700 hover:bg-gray-200 border border-gray-300 bg-white rounded-sm"
+          title="Add a new power group"
         >
           <Plus size={12} className="mr-1" /> Add Group
         </button>
